@@ -69,12 +69,13 @@ func startReplicaSetController(ctx context.Context, controllerContext Controller
 	return nil, true, nil
 }
 
+// 启动 Deployment Controller
 func startDeploymentController(ctx context.Context, controllerContext ControllerContext) (controller.Interface, bool, error) {
 	dc, err := deployment.NewDeploymentController(
 		controllerContext.InformerFactory.Apps().V1().Deployments(),
 		controllerContext.InformerFactory.Apps().V1().ReplicaSets(),
 		controllerContext.InformerFactory.Core().V1().Pods(),
-		controllerContext.ClientBuilder.ClientOrDie("deployment-controller"),
+		controllerContext.ClientBuilder.ClientOrDie("deployment-controller"), // clientset.Interface
 	)
 	if err != nil {
 		return nil, true, fmt.Errorf("error creating Deployment controller: %v", err)

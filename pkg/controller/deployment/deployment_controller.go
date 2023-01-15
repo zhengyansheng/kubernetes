@@ -124,16 +124,24 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		UpdateFunc: dc.updateReplicaSet,
 		DeleteFunc: dc.deleteReplicaSet,
 	})
+	// podInformer: PodInformer provides access to a shared informer and lister for pods
+	// podInformer: 提供了访问Shared Informer 和 列出所有的Pods
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		DeleteFunc: dc.deletePod,
 	})
 
-	dc.syncHandler = dc.syncDeployment
-	dc.enqueueDeployment = dc.enqueue
+	dc.syncHandler = dc.syncDeployment // 同步deployment func
+	dc.enqueueDeployment = dc.enqueue  // 排队
 
 	dc.dLister = dInformer.Lister()
 	dc.rsLister = rsInformer.Lister()
+	// podLister: List lists all Pods in the indexer.
+	// 通过 索引 来列出所有的Pods
+	// read-only
 	dc.podLister = podInformer.Lister()
+	/*
+		如果 shared informer 已经做过至少一次的 full LIST 全量同步 则返回true
+	*/
 	dc.dListerSynced = dInformer.Informer().HasSynced
 	dc.rsListerSynced = rsInformer.Informer().HasSynced
 	dc.podListerSynced = podInformer.Informer().HasSynced
@@ -149,11 +157,13 @@ func (dc *DeploymentController) Run(ctx context.Context, workers int) {
 	dc.eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: dc.client.CoreV1().Events("")})
 	defer dc.eventBroadcaster.Shutdown()
 
+	// 关闭 queue
 	defer dc.queue.ShutDown()
 
 	klog.InfoS("Starting controller", "controller", "deployment")
 	defer klog.InfoS("Shutting down controller", "controller", "deployment")
 
+	// 等价于 WaitForCacheSync
 	if !cache.WaitForNamedCacheSync("deployment", ctx.Done(), dc.dListerSynced, dc.rsListerSynced, dc.podListerSynced) {
 		return
 	}
@@ -464,6 +474,7 @@ func (dc *DeploymentController) worker(ctx context.Context) {
 }
 
 func (dc *DeploymentController) processNextWorkItem(ctx context.Context) bool {
+	// key: default/pod1
 	key, quit := dc.queue.Get()
 	if quit {
 		return false
@@ -567,6 +578,7 @@ func (dc *DeploymentController) getPodMapForDeployment(d *apps.Deployment, rsLis
 // syncDeployment will sync the deployment with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) error {
+	// key: default/pod1
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
@@ -602,6 +614,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		return nil
 	}
 
+	// 通过 deployment 获取到对应的 ReplicaSets
 	// List ReplicaSets owned by this Deployment, while reconciling ControllerRef
 	// through adoption/orphaning.
 	rsList, err := dc.getReplicaSetsForDeployment(ctx, d)
@@ -613,11 +626,14 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 	//
 	// * check if a Pod is labeled correctly with the pod-template-hash label.
 	// * check that no old Pods are running in the middle of Recreate Deployments.
+	// 通过 deployment 获取到对应的 podMap
+	// map[types.UID][]*v1.Pod
 	podMap, err := dc.getPodMapForDeployment(d, rsList)
 	if err != nil {
 		return err
 	}
 
+	// deployment 被删除了
 	if d.DeletionTimestamp != nil {
 		return dc.syncStatusOnly(ctx, d, rsList)
 	}
@@ -629,6 +645,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		return err
 	}
 
+	// deployment 暂停了
 	if d.Spec.Paused {
 		return dc.sync(ctx, d, rsList)
 	}
