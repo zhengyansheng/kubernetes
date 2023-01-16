@@ -102,16 +102,23 @@ type ExplicitKey string
 // TODO: replace key-as-string with a key-as-struct so that this
 // packing/unpacking won't be necessary.
 func MetaNamespaceKeyFunc(obj interface{}) (string, error) {
+	// 断言是否是字符串类型
 	if key, ok := obj.(ExplicitKey); ok {
+		// 如果是字符串类型直接返回
 		return string(key), nil
 	}
+	// 如果不是字符串类型，调用meta.Accessor再次断言
 	meta, err := meta.Accessor(obj)
 	if err != nil {
+		// 断言失败
 		return "", fmt.Errorf("object has no meta: %v", err)
 	}
+	// 断言成功
 	if len(meta.GetNamespace()) > 0 {
+		// return namespace/name
 		return meta.GetNamespace() + "/" + meta.GetName(), nil
 	}
+	// return namespace/name
 	return meta.GetName(), nil
 }
 
@@ -141,7 +148,7 @@ type cache struct {
 	cacheStorage ThreadSafeStore
 	// keyFunc is used to make the key for objects stored in and retrieved from items, and
 	// should be deterministic.
-	keyFunc KeyFunc
+	keyFunc KeyFunc // -> MetaNamespaceKeyFunc
 }
 
 var _ Store = &cache{}

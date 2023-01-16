@@ -61,10 +61,11 @@ type ThreadSafeStore interface {
 
 // storeIndex implements the indexing functionality for Store interface
 type storeIndex struct {
+	// index: map[string]sets.String
 	// indexers maps a name to an IndexFunc
-	indexers Indexers
+	indexers Indexers // indexers: map[string]IndexFunc
 	// indices maps a name to an Index
-	indices Indices
+	indices Indices // indexers: map[string]Index
 }
 
 func (i *storeIndex) reset() {
