@@ -56,6 +56,7 @@ type Indexer interface {
 }
 
 // IndexFunc knows how to compute the set of indexed values for an object.
+// 计算索引的函数：传入一个对象，返回计算索引的值
 type IndexFunc func(obj interface{}) ([]string, error)
 
 // IndexFuncToKeyFuncAdapter adapts an indexFunc to a keyFunc.  This is only useful if your index function returns

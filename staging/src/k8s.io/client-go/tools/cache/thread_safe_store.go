@@ -72,16 +72,32 @@ func (i *storeIndex) reset() {
 	i.indices = Indices{}
 }
 
+/*
+   indexName: namespace
+   obj: pod1Object
+*/
 func (i *storeIndex) getKeysFromIndex(indexName string, obj interface{}) (sets.String, error) {
+	// type Indexers map[string]IndexFunc
+	// 通过 indexName 得到 indexFunc
 	indexFunc := i.indexers[indexName]
 	if indexFunc == nil {
+		// 如果 indexFunc 不存在 直接返回error
 		return nil, fmt.Errorf("Index with name %s does not exist", indexName)
 	}
 
+	// 通过 indexFunc: MetaNamespaceIndexFunc 得到 []string{"default'}
 	indexedValues, err := indexFunc(obj)
 	if err != nil {
 		return nil, err
 	}
+	// index: map[indexName]sets.String
+	/*
+		{
+			"namespace":
+				{"default": ["pod1", "pod1"]},
+				{"kube-system": ["pod1", "pod1"]}
+		}
+	*/
 	index := i.indices[indexName]
 
 	var storeKeySet sets.String
@@ -100,6 +116,7 @@ func (i *storeIndex) getKeysFromIndex(indexName string, obj interface{}) (sets.S
 		}
 	}
 
+	// ["pod1", "pod2", "pod3"]
 	return storeKeySet, nil
 }
 
@@ -290,6 +307,7 @@ func (c *threadSafeMap) Index(indexName string, obj interface{}) ([]interface{},
 
 	list := make([]interface{}, 0, storeKeySet.Len())
 	for storeKey := range storeKeySet {
+		// items: {"default/pod1": pod1Obj, "default/pod2": pod2Obj}
 		list = append(list, c.items[storeKey])
 	}
 	return list, nil
