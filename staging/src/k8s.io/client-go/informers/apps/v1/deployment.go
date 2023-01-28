@@ -55,6 +55,11 @@ func NewDeploymentInformer(client kubernetes.Interface, namespace string, resync
 // NewFilteredDeploymentInformer constructs a new informer for Deployment type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
+/*
+NewFilteredDeploymentInformer 构造一个新的 Deployment 类型的 informer
+总是喜欢使用一个 informer 工厂去获取一个 shared informer，而不是使用一个独立的informer
+这是为了减少内存和到服务器的连接数
+ */
 func NewFilteredDeploymentInformer(client kubernetes.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
@@ -62,13 +67,13 @@ func NewFilteredDeploymentInformer(client kubernetes.Interface, namespace string
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AppsV1().Deployments(namespace).List(context.TODO(), options)
+				return client.AppsV1().Deployments(namespace).List(context.TODO(), options) // list
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AppsV1().Deployments(namespace).Watch(context.TODO(), options)
+				return client.AppsV1().Deployments(namespace).Watch(context.TODO(), options) // watch
 			},
 		},
 		&appsv1.Deployment{},

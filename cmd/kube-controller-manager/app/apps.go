@@ -63,8 +63,8 @@ func startReplicaSetController(ctx context.Context, controllerContext Controller
 	go replicaset.NewReplicaSetController(
 		controllerContext.InformerFactory.Apps().V1().ReplicaSets(),
 		controllerContext.InformerFactory.Core().V1().Pods(),
-		controllerContext.ClientBuilder.ClientOrDie("replicaset-controller"),
-		replicaset.BurstReplicas,
+		controllerContext.ClientBuilder.ClientOrDie("replicaset-controller"), // clientset.Interface
+		replicaset.BurstReplicas,                                             // BurstReplicas = 500
 	).Run(ctx, int(controllerContext.ComponentConfig.ReplicaSetController.ConcurrentRSSyncs))
 	return nil, true, nil
 }

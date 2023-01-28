@@ -138,6 +138,7 @@ func NewReplicaSetController(rsInformer appsinformers.ReplicaSetInformer, podInf
 func NewBaseController(rsInformer appsinformers.ReplicaSetInformer, podInformer coreinformers.PodInformer, kubeClient clientset.Interface, burstReplicas int,
 	gvk schema.GroupVersionKind, metricOwnerName, queueName string, podControl controller.PodControlInterface, eventBroadcaster record.EventBroadcaster) *ReplicaSetController {
 
+	// 创建 replicaset controller 对象
 	rsc := &ReplicaSetController{
 		GroupVersionKind: gvk,
 		kubeClient:       kubeClient,
@@ -148,6 +149,7 @@ func NewBaseController(rsInformer appsinformers.ReplicaSetInformer, podInformer 
 		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), queueName),
 	}
 
+	// 设置 rsInformer 和 podInformer 对应的回调函数
 	rsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    rsc.addRS,
 		UpdateFunc: rsc.updateRS,
@@ -181,6 +183,7 @@ func NewBaseController(rsInformer appsinformers.ReplicaSetInformer, podInformer 
 	rsc.podLister = podInformer.Lister()
 	rsc.podListerSynced = podInformer.Informer().HasSynced
 
+	// 设置 ReplicaSet 的同步函数
 	rsc.syncHandler = rsc.syncReplicaSet
 
 	return rsc
