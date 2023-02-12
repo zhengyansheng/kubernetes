@@ -167,12 +167,15 @@ controller, and serviceaccounts controller.`,
 	return cmd
 }
 
-// ResyncPeriod returns a function which generates a duration each time it is
-// invoked; this is so that multiple controllers don't get into lock-step and all
-// hammer the apiserver with list requests simultaneously.
+// ResyncPeriod returns a function which generates a duration each time it is invoked;
+// this is so that multiple controllers don't get into lock-step and
+// all hammer the apiserver with list requests simultaneously.
 func ResyncPeriod(c *config.CompletedConfig) func() time.Duration {
 	return func() time.Duration {
+		// rand.Float64 -> [0.0,1.0)
+		// factor： 就是1到2之间的随机数，但是不包含2
 		factor := rand.Float64() + 1
+		// c.ComponentConfig.Generic.MinResyncPeriod.Nanoseconds()
 		return time.Duration(float64(c.ComponentConfig.Generic.MinResyncPeriod.Nanoseconds()) * factor)
 	}
 }
@@ -190,6 +193,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	defer c.EventBroadcaster.Shutdown()
 
 	if cfgz, err := configz.New(ConfigzName); err == nil {
+		// 设置值
 		cfgz.Set(c.ComponentConfig)
 	} else {
 		klog.Errorf("unable to register configz: %v", err)
@@ -224,6 +228,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	saTokenControllerInitFunc := serviceAccountTokenControllerStarter{rootClientBuilder: rootClientBuilder}.startServiceAccountTokenController
 
 	run := func(ctx context.Context, startSATokenController InitFunc, initializersFunc ControllerInitializersFunc) {
+		// 创建 controller 的上下文
 		controllerContext, err := CreateControllerContext(c, rootClientBuilder, clientBuilder, ctx.Done())
 		if err != nil {
 			klog.Fatalf("error building controller context: %v", err)
@@ -289,6 +294,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 					initializersFunc = createInitializersFunc(leaderMigrator.FilterFunc, leadermigration.ControllerNonMigrated)
 					klog.Info("leader migration: starting main controllers.")
 				}
+				// 启动
 				run(ctx, startSATokenController, initializersFunc)
 			},
 			OnStoppedLeading: func() {
@@ -515,7 +521,10 @@ func GetAvailableResources(clientBuilder clientbuilder.ControllerClientBuilder) 
 // controllers such as the cloud provider and clientBuilder. rootClientBuilder is only used for
 // the shared-informers client and token controller.
 func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clientBuilder clientbuilder.ControllerClientBuilder, stop <-chan struct{}) (ControllerContext, error) {
+	// clientSet
 	versionedClient := rootClientBuilder.ClientOrDie("shared-informers")
+	// 实力化 share informer factory
+	// ResyncPeriod: 默认的同步周期
 	sharedInformers := informers.NewSharedInformerFactory(versionedClient, ResyncPeriod(s)())
 
 	metadataClient := metadata.NewForConfigOrDie(rootClientBuilder.ConfigOrDie("metadata-informers"))
@@ -523,6 +532,7 @@ func CreateControllerContext(s *config.CompletedConfig, rootClientBuilder, clien
 
 	// If apiserver is not running we should wait for some time and fail only then. This is particularly
 	// important when we start apiserver and controller manager at the same time.
+	// 如果 apiserver 没有运行，我们应该等待一段时间，然后才失败，尤其是 apiserver 和 controller 同时启动时
 	if err := genericcontrollermanager.WaitForAPIServer(versionedClient, 10*time.Second); err != nil {
 		return ControllerContext{}, fmt.Errorf("failed to wait for apiserver being healthy: %v", err)
 	}

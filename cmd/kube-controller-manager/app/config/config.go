@@ -26,6 +26,7 @@ import (
 
 // Config is the main context object for the controller manager.
 type Config struct {
+	// 组件配置
 	ComponentConfig kubectrlmgrconfig.KubeControllerManagerConfiguration
 
 	SecureServing *apiserver.SecureServingInfo
@@ -56,9 +57,11 @@ type CompletedConfig struct {
 }
 
 // Complete fills in any fields not set that are required to have valid data. It's mutating the receiver.
+// Complete: 在任何字段上没有设置 填充它一个有效的数据，它在改变接收的数据
 func (c *Config) Complete() *CompletedConfig {
 	cc := completedConfig{c}
 
+	// API Server 的认证 鉴权
 	apiserver.AuthorizeClientBearerToken(c.LoopbackClientConfig, &c.Authentication, &c.Authorization)
 
 	return &CompletedConfig{&cc}

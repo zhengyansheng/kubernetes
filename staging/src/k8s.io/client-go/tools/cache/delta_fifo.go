@@ -110,8 +110,10 @@ type DeltaFIFO struct {
 
 	// populated is true if the first batch of items inserted by Replace() has been populated
 	// or Delete/Add/Update/AddIfNotPresent was called first.
+	// 如果对象通过 replace() 插入到队列中 或者或者Delete/Add/Update/AddIfNotPresent ，设置populated=true
 	populated bool
 	// initialPopulationCount is the number of items inserted by the first call of Replace()
+	// initialPopulationCount 是对象的数量 通过调用Replace()
 	initialPopulationCount int
 
 	// keyFunc is used to make the key used for queued item
@@ -268,6 +270,8 @@ func (f *DeltaFIFO) KeyOf(obj interface{}) (string, error) {
 
 // HasSynced returns true if an Add/Update/Delete/AddIfNotPresent are called first,
 // or the first batch of items inserted by Replace() has been popped.
+// HasSynced: 如果 Add/Update/Delete/AddIfNotPresent 被调用 返回true
+// 或者
 func (f *DeltaFIFO) HasSynced() bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -411,6 +415,8 @@ func isDeletionDup(a, b *Delta) *Delta {
 // queueActionLocked appends to the delta list for the object.
 // Caller must lock first.
 func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) error {
+	// action sync/replace
+	// obj: api server 's object
 	id, err := f.KeyOf(obj)
 	if err != nil {
 		return KeyError{obj, err}
@@ -520,7 +526,7 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	for {
-		for len(f.queue) == 0 {
+		for len(f.queue) == 0 { // for 为什么不是if
 			// When the queue is empty, invocation of Pop() is blocked until new item is enqueued.
 			// When Close() is called, the f.closed is set and the condition is broadcasted.
 			// Which causes this loop to continue and return from the Pop().
@@ -528,6 +534,7 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 				return nil, ErrFIFOClosed
 			}
 
+			// 挂起
 			f.cond.Wait()
 		}
 		isInInitialList := !f.hasSynced_locked()
@@ -540,6 +547,7 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 		item, ok := f.items[id]
 		if !ok {
 			// This should never happen
+			// 如果队列中存在，但是内存中不存在则跳出
 			klog.Errorf("Inconceivable! %q was in f.queue but not f.items; ignoring.", id)
 			continue
 		}
@@ -556,6 +564,8 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 				utiltrace.Field{Key: "Reason", Value: "slow event handlers blocking the queue"})
 			defer trace.LogIfLong(100 * time.Millisecond)
 		}
+		// item: [ADD=v1.Pod, XXX=corev1.Deployment, ...]
+		// isInInitialList
 		err := process(item, isInInitialList)
 		if e, ok := err.(ErrRequeue); ok {
 			f.addIfNotPresent(id, item)
@@ -567,8 +577,9 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 	}
 }
 
-// Replace atomically does two things: (1) it adds the given objects
-// using the Sync or Replace DeltaType and then (2) it does some deletions.
+// Replace atomically does two things:
+// (1) it adds the given objects using the Sync or Replace DeltaType and then
+// (2) it does some deletions.
 // In particular: for every pre-existing key K that is not the key of
 // an object in `list` there is the effect of
 // `Delete(DeletedFinalStateUnknown{K, O})` where O is current object
@@ -578,6 +589,7 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 // are those listed by `f.knownObjects` and the current object of K is
 // what `f.knownObjects.GetByKey(K)` returns.
 func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
+	// list 是api server中的对象
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	keys := make(sets.String, len(list))
@@ -602,7 +614,7 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 
 	if f.knownObjects == nil {
 		// Do deletion detection against our own list.
-		queuedDeletions := 0
+		queuedDeletions := 0 // 检测出要删除的对象个数
 		for k, oldItem := range f.items {
 			if keys.Has(k) {
 				continue
@@ -671,7 +683,7 @@ func (f *DeltaFIFO) Resync() error {
 		return nil
 	}
 
-	keys := f.knownObjects.ListKeys()
+	keys := f.knownObjects.ListKeys() // 从queue中获取所有的keys
 	for _, k := range keys {
 		if err := f.syncKeyLocked(k); err != nil {
 			return err

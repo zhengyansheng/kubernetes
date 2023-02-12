@@ -185,13 +185,15 @@ func (c *controller) LastSyncResourceVersion() string {
 // also be helpful.
 func (c *controller) processLoop() {
 	for {
-		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
+		// Queue -> deltaFIFO
+		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process)) // type ProcessFunc func(obj interface{}, isInInitialList bool) error
 		if err != nil {
 			if err == ErrFIFOClosed {
 				return
 			}
 			if c.config.RetryOnError {
 				// This is the safe way to re-enqueue.
+				// 如果失败了在重新入队
 				c.config.Queue.AddIfNotPresent(obj)
 			}
 		}
@@ -358,6 +360,13 @@ func NewInformer(
 ) (Store, Controller) {
 	// This will hold the client state, as we know it.
 	clientState := NewStore(DeletionHandlingMetaNamespaceKeyFunc)
+	/*
+		lw: listwatch
+		objType: v1.Pod
+		resyncPeriod: 同步周期
+		clientState: store
+		h: ResourceEventHandlerDetailedFuncs
+	*/
 
 	return clientState, newInformer(lw, objType, resyncPeriod, h, clientState, nil)
 }
@@ -463,20 +472,25 @@ func processDeltas(
 			}
 		}
 
+		// clientState 就是 threadSafeMap
 		switch d.Type {
 		case Sync, Replaced, Added, Updated:
+			// 查询 threadSafeMap 是否存在这个对象，
 			if old, exists, err := clientState.Get(obj); err == nil && exists {
+				// 存在就更新
 				if err := clientState.Update(obj); err != nil {
 					return err
 				}
 				handler.OnUpdate(old, obj)
 			} else {
+				// 不存在就添加到 indexer
 				if err := clientState.Add(obj); err != nil {
 					return err
 				}
 				handler.OnAdd(obj, isInInitialList)
 			}
 		case Deleted:
+			// 从 indexer 删除
 			if err := clientState.Delete(obj); err != nil {
 				return err
 			}
@@ -516,7 +530,7 @@ func newInformer(
 	})
 
 	cfg := &Config{
-		Queue:            fifo,
+		Queue:            fifo, //deltaFIFO
 		ListerWatcher:    lw,
 		ObjectType:       objType,
 		FullResyncPeriod: resyncPeriod,

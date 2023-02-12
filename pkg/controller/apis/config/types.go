@@ -53,9 +53,11 @@ type KubeControllerManagerConfiguration struct {
 	metav1.TypeMeta
 
 	// Generic holds configuration for a generic controller-manager
+	// Generic: controller-manager 的通用配置
 	Generic cmconfig.GenericControllerManagerConfiguration
 	// KubeCloudSharedConfiguration holds configuration for shared related features
 	// both in cloud controller manager and kube-controller manager.
+	// cloud controller manager 和 controller manager 的共享关联特性的配置
 	KubeCloudShared cpconfig.KubeCloudSharedConfiguration
 
 	// AttachDetachControllerConfiguration holds configuration for
