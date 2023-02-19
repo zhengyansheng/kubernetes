@@ -52,12 +52,15 @@ type NodeScore struct {
 type NodeToStatusMap map[string]*Status
 
 // NodePluginScores is a struct with node name and scores for that node.
+// NodePluginScores: 节点打分
 type NodePluginScores struct {
-	// Name is node name.
+	// Name is node name. 节点名称
 	Name string
 	// Scores is scores from plugins and extenders.
+	// 来自于插件和扩展器的分数
 	Scores []PluginScore
 	// TotalScore is the total score in Scores.
+	// 总分
 	TotalScore int64
 }
 
@@ -94,6 +97,11 @@ const (
 	// Skip is used in the following scenarios:
 	// - when a Bind plugin chooses to skip binding.
 	// - when a PreFilter plugin returns Skip so that coupled Filter plugin/PreFilterExtensions() will be skipped.
+	/*
+		Skip：用于以下场景
+		- 当一个绑定的插件选择一个跳过绑定
+		- 当一个 PreFilter 插件返回Skip时，将跳过耦合的 plugin/PreFilterExtensions() 将跳过
+	*/
 	Skip
 )
 
@@ -106,6 +114,7 @@ func (c Code) String() string {
 
 const (
 	// MaxNodeScore is the maximum score a Score plugin is expected to return.
+	// MaxNodeScore 是score插件期望返回的最大分数
 	MaxNodeScore int64 = 100
 
 	// MinNodeScore is the minimum score a Score plugin is expected to return.
@@ -205,6 +214,7 @@ func (s *Status) AppendReason(reason string) {
 }
 
 // IsSuccess returns true if and only if "Status" is nil or Code is "Success".
+// 如果 Code=Success或Status=nil 返回true
 func (s *Status) IsSuccess() bool {
 	return s.Code() == Success
 }

@@ -345,6 +345,7 @@ func (sched *Scheduler) schedulePod(ctx context.Context, fwk framework.Framework
 		return result, ErrNoNodesAvailable
 	}
 
+	// 1. 预选，查找nodes匹配合适的pod
 	feasibleNodes, diagnosis, err := sched.findNodesThatFitPod(ctx, fwk, state, pod)
 	if err != nil {
 		return result, err
@@ -368,6 +369,7 @@ func (sched *Scheduler) schedulePod(ctx context.Context, fwk framework.Framework
 		}, nil
 	}
 
+	// 2. 优选
 	priorityList, err := prioritizeNodes(ctx, sched.Extenders, fwk, state, pod, feasibleNodes)
 	if err != nil {
 		return result, err
@@ -647,25 +649,28 @@ func prioritizeNodes(
 		for i := range nodes {
 			result = append(result, framework.NodePluginScores{
 				Name:       nodes[i].Name,
-				TotalScore: 1,
+				TotalScore: 1, // 得分都为1
 			})
 		}
 		return result, nil
 	}
 
 	// Run PreScore plugins.
+	// 运行 PreScore 插件
 	preScoreStatus := fwk.RunPreScorePlugins(ctx, state, pod, nodes)
 	if !preScoreStatus.IsSuccess() {
 		return nil, preScoreStatus.AsError()
 	}
 
 	// Run the Score plugins.
+	// 运行 Score 插件
 	nodesScores, scoreStatus := fwk.RunScorePlugins(ctx, state, pod, nodes)
 	if !scoreStatus.IsSuccess() {
 		return nil, scoreStatus.AsError()
 	}
 
 	// Additional details logged at level 10 if enabled.
+	// 打印日志
 	klogV := klog.V(10)
 	if klogV.Enabled() {
 		for _, nodeScore := range nodesScores {
@@ -737,6 +742,7 @@ func prioritizeNodes(
 		}
 	}
 
+	// 打印日志
 	if klogV.Enabled() {
 		for i := range nodesScores {
 			klogV.InfoS("Calculated node's final score for pod", "pod", klog.KObj(pod), "node", nodesScores[i].Name, "score", nodesScores[i].TotalScore)
@@ -747,10 +753,15 @@ func prioritizeNodes(
 
 // selectHost takes a prioritized list of nodes and then picks one
 // in a reservoir sampling manner from the nodes that had the highest score.
+// selectHost: 从优先级列表中获取一个得分最高的节点
 func selectHost(nodeScores []framework.NodePluginScores) (string, error) {
+	/*
+		nodeScores: 集群中节点的得分
+	*/
 	if len(nodeScores) == 0 {
 		return "", fmt.Errorf("empty priorityList")
 	}
+	// 从列表中求一个最大值，如果分数相等则随机替换最大值
 	maxScore := nodeScores[0].TotalScore
 	selected := nodeScores[0].Name
 	cntOfMaxScore := 1
@@ -760,8 +771,9 @@ func selectHost(nodeScores []framework.NodePluginScores) (string, error) {
 			selected = ns.Name
 			cntOfMaxScore = 1
 		} else if ns.TotalScore == maxScore {
+			// 分数相等
 			cntOfMaxScore++
-			if rand.Intn(cntOfMaxScore) == 0 {
+			if rand.Intn(cntOfMaxScore) == 0 { // 随机替换最大值为当前值
 				// Replace the candidate with probability of 1/cntOfMaxScore
 				selected = ns.Name
 			}

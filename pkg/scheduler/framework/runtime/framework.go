@@ -248,6 +248,7 @@ func WithClusterEventMap(m map[framework.ClusterEvent]sets.String) Option {
 var _ framework.Framework = &frameworkImpl{}
 
 // NewFramework initializes plugins given the configuration and the registry.
+// 初始化插件
 func NewFramework(r Registry, profile *config.KubeSchedulerProfile, stopCh <-chan struct{}, opts ...Option) (framework.Framework, error) {
 	options := defaultFrameworkOptions(stopCh)
 	for _, opt := range opts {
@@ -613,10 +614,12 @@ func (f *frameworkImpl) RunPreFilterPlugins(ctx context.Context, state *framewor
 	skipPlugins := sets.New[string]()
 	for _, pl := range f.preFilterPlugins {
 		r, s := f.runPreFilterPlugin(ctx, pl, state, pod)
+		// 跳过插件
 		if s.IsSkip() {
 			skipPlugins.Insert(pl.Name())
 			continue
 		}
+		// 如果失败
 		if !s.IsSuccess() {
 			s.SetFailedPlugin(pl.Name())
 			if s.IsUnschedulable() {
@@ -624,13 +627,16 @@ func (f *frameworkImpl) RunPreFilterPlugins(ctx context.Context, state *framewor
 			}
 			return nil, framework.AsStatus(fmt.Errorf("running PreFilter plugin %q: %w", pl.Name(), s.AsError())).WithFailedPlugin(pl.Name())
 		}
+		// 为空
 		if !r.AllNodes() {
 			pluginsWithNodes = append(pluginsWithNodes, pl.Name())
 		}
 		result = result.Merge(r)
 		if !result.AllNodes() && len(result.NodeNames) == 0 {
+			// 节点未同时满足插件要求
 			msg := fmt.Sprintf("node(s) didn't satisfy plugin(s) %v simultaneously", pluginsWithNodes)
 			if len(pluginsWithNodes) == 1 {
+				// 节点不满足插件要求
 				msg = fmt.Sprintf("node(s) didn't satisfy plugin %v", pluginsWithNodes[0])
 			}
 			return nil, framework.NewStatus(framework.Unschedulable, msg)

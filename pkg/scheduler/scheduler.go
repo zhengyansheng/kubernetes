@@ -283,7 +283,7 @@ func New(client clientset.Interface,
 
 	// The nominator will be passed all the way to framework instantiation.
 	nominator := internalqueue.NewPodNominator(podLister)
-	snapshot := internalcache.NewEmptySnapshot()
+	snapshot := internalcache.NewEmptySnapshot() // node
 	clusterEventMap := make(map[framework.ClusterEvent]sets.String)
 
 	profiles, err := profile.NewMap(options.profiles, registry, recorderFactory, stopCh,
