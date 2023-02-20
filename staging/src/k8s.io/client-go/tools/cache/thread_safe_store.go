@@ -161,11 +161,11 @@ func (i *storeIndex) addIndexers(newIndexers Indexers) error {
 func (i *storeIndex) updateIndices(oldObj interface{}, newObj interface{}, key string) {
 	var oldIndexValues, indexValues []string
 	var err error
-	for name, indexFunc := range i.indexers {
+	for name, indexFunc := range i.indexers { // name: namespace
 		if oldObj != nil {
-			oldIndexValues, err = indexFunc(oldObj)
+			oldIndexValues, err = indexFunc(oldObj) // oldIndexValues: ["default"]
 		} else {
-			oldIndexValues = oldIndexValues[:0]
+			oldIndexValues = oldIndexValues[:0] // 置空
 		}
 		if err != nil {
 			panic(fmt.Errorf("unable to calculate an index entry for key %q on index %q: %v", key, name, err))
@@ -195,7 +195,7 @@ func (i *storeIndex) updateIndices(oldObj interface{}, newObj interface{}, key s
 			i.deleteKeyFromIndex(key, value, index)
 		}
 		for _, value := range indexValues {
-			i.addKeyToIndex(key, value, index)
+			i.addKeyToIndex(key, value, index) // namespace, default {"default": {"pod1", "pod2"}}
 		}
 	}
 }
@@ -225,10 +225,12 @@ func (i *storeIndex) deleteKeyFromIndex(key, indexValue string, index Index) {
 
 // threadSafeMap implements ThreadSafeStore
 type threadSafeMap struct {
-	lock  sync.RWMutex
-	items map[string]interface{}
+	// lock + item 实现了并发安全的map
+	lock  sync.RWMutex           // 读写锁
+	items map[string]interface{} // map
 
 	// index implements the indexing functionality
+	// index 实现了索引的功能
 	index *storeIndex
 }
 
@@ -237,10 +239,15 @@ func (c *threadSafeMap) Add(key string, obj interface{}) {
 }
 
 func (c *threadSafeMap) Update(key string, obj interface{}) {
+	// 加写锁
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	oldObject := c.items[key]
+
+	// 更新item 内存缓存
 	c.items[key] = obj
+
+	// 更新index索引
 	c.index.updateIndices(oldObject, obj, key)
 }
 
@@ -254,6 +261,7 @@ func (c *threadSafeMap) Delete(key string) {
 }
 
 func (c *threadSafeMap) Get(key string) (item interface{}, exists bool) {
+	// 加读锁
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	item, exists = c.items[key]
@@ -314,7 +322,12 @@ func (c *threadSafeMap) Index(indexName string, obj interface{}) ([]interface{},
 }
 
 // ByIndex returns a list of the items whose indexed values in the given index include the given indexed value
+/*
+	indexName： namespace
+	indexedValue: default
+*/
 func (c *threadSafeMap) ByIndex(indexName, indexedValue string) ([]interface{}, error) {
+	// 加读锁
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 

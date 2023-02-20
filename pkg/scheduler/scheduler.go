@@ -87,6 +87,7 @@ type Scheduler struct {
 	SchedulingQueue internalqueue.SchedulingQueue
 
 	// Profiles are the scheduling profiles.
+	// 调度的配置文件
 	Profiles profile.Map
 
 	client clientset.Interface
@@ -266,7 +267,9 @@ func New(client clientset.Interface,
 		options.profiles = cfg.Profiles
 	}
 
+	// 创建注册表，包含内置的全部插件
 	registry := frameworkplugins.NewInTreeRegistry()
+	// 内置注册表和外部注册表合并
 	if err := registry.Merge(options.frameworkOutOfTreeRegistry); err != nil {
 		return nil, err
 	}

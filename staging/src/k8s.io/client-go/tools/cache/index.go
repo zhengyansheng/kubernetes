@@ -93,10 +93,18 @@ func MetaNamespaceIndexFunc(obj interface{}) ([]string, error) {
 }
 
 // Index maps the indexed value to a set of keys in the store that match on that value
-type Index map[string]sets.String
+type Index map[string]sets.String // {"default" : {"default/pod1", "default/pod2", "default/pod3"}}
 
 // Indexers maps a name to an IndexFunc
-type Indexers map[string]IndexFunc
+type Indexers map[string]IndexFunc // {"namespace": MetaNamespaceIndexFunc}
 
 // Indices maps a name to an Index
 type Indices map[string]Index
+
+/*Indices
+{
+	"namespace": {
+		{"default" : {"default/pod1", "default/pod2", "default/pod3"}},
+	}
+}
+*/

@@ -30,7 +30,7 @@ import (
 type Lister interface {
 	// List should return a list type object; the Items field will be extracted, and the
 	// ResourceVersion field will be used to start the watch in the right place.
-	List(options metav1.ListOptions) (runtime.Object, error)
+	List(options metav1.ListOptions) (runtime.Object, error) // Items
 }
 
 // Watcher is any object that knows how to start a watch on a resource.
@@ -54,19 +54,27 @@ type WatchFunc func(options metav1.ListOptions) (watch.Interface, error)
 // ListWatch knows how to list and watch a set of apiserver resources.  It satisfies the ListerWatcher interface.
 // It is a convenience function for users of NewReflector, etc.
 // ListFunc and WatchFunc must not be nil
+/*
+	ListWatch: 知道如何列出和监视一组 apiserver 资源。它满足 ListerWatcher 接口
+               这是 NewReflector 使用的一个方便功能
+               ListFunc和WatchFunc不能为nil
+*/
 type ListWatch struct {
 	ListFunc  ListFunc
 	WatchFunc WatchFunc
 	// DisableChunking requests no chunking for this list watcher.
+	// DisableChunking不为此 list watcher 请求分块
 	DisableChunking bool
 }
 
 // Getter interface knows how to access Get method from RESTClient.
+// Getter: 接口知道如何从 RESTClient 访问 Get 方式
 type Getter interface {
 	Get() *restclient.Request
 }
 
 // NewListWatchFromClient creates a new ListWatch from the specified client, resource, namespace and field selector.
+// 实例化 ListWatch 接口
 func NewListWatchFromClient(c Getter, resource string, namespace string, fieldSelector fields.Selector) *ListWatch {
 	optionsModifier := func(options *metav1.ListOptions) {
 		options.FieldSelector = fieldSelector.String()
@@ -78,6 +86,7 @@ func NewListWatchFromClient(c Getter, resource string, namespace string, fieldSe
 // Option modifier is a function takes a ListOptions and modifies the consumed ListOptions. Provide customized modifier function
 // to apply modification to ListOptions with a field selector, a label selector, or any other desired options.
 func NewFilteredListWatchFromClient(c Getter, resource string, namespace string, optionsModifier func(options *metav1.ListOptions)) *ListWatch {
+	// list
 	listFunc := func(options metav1.ListOptions) (runtime.Object, error) {
 		optionsModifier(&options)
 		return c.Get().
@@ -87,6 +96,7 @@ func NewFilteredListWatchFromClient(c Getter, resource string, namespace string,
 			Do(context.TODO()).
 			Get()
 	}
+	// watch
 	watchFunc := func(options metav1.ListOptions) (watch.Interface, error) {
 		options.Watch = true
 		optionsModifier(&options)

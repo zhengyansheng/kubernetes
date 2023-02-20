@@ -303,9 +303,13 @@ func (o *Options) Config() (*schedulerappconfig.Config, error) {
 		}
 	}
 
+	// clientSet
 	c.Client = client
+	// informer
 	c.InformerFactory = scheduler.NewInformerFactory(client, 0)
+	// dynamicClient
 	dynClient := dynamic.NewForConfigOrDie(c.KubeConfig)
+	// dynamicInformer
 	c.DynInformerFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 0, corev1.NamespaceAll, nil)
 	c.LeaderElection = leaderElectionConfig
 

@@ -64,11 +64,13 @@ type sharedInformerFactory struct {
 	informers map[reflect.Type]cache.SharedIndexInformer
 	// startedInformers is used for tracking which informers have been started.
 	// This allows Start() to be called multiple times safely.
+	// startedInformers: 用于跟踪已启动的 goroutine，允许安全的多次调用 Start()
 	startedInformers map[reflect.Type]bool
 	// wg tracks how many goroutines were started.
 	wg sync.WaitGroup
-	// shuttingDown is true when Shutdown has been called. It may still be running
-	// because it needs to wait for goroutines.
+	// shuttingDown is true when Shutdown has been called.
+	// It may still be running because it needs to wait for goroutines.
+	// 当 Shutdown 被调用时，shuttingDown是true，它仍然正在运行，因为它要等待所有的 goroutines
 	shuttingDown bool
 }
 
@@ -99,6 +101,7 @@ func WithNamespace(namespace string) SharedInformerOption {
 }
 
 // NewSharedInformerFactory constructs a new instance of sharedInformerFactory for all namespaces.
+// NewSharedInformerFactory: 为所有的命名空间 创建一个新的 NewSharedInformerFactory 实例
 func NewSharedInformerFactory(client kubernetes.Interface, defaultResync time.Duration) SharedInformerFactory {
 	return NewSharedInformerFactoryWithOptions(client, defaultResync)
 }
@@ -114,8 +117,8 @@ func NewFilteredSharedInformerFactory(client kubernetes.Interface, defaultResync
 // NewSharedInformerFactoryWithOptions constructs a new instance of a SharedInformerFactory with additional options.
 func NewSharedInformerFactoryWithOptions(client kubernetes.Interface, defaultResync time.Duration, options ...SharedInformerOption) SharedInformerFactory {
 	factory := &sharedInformerFactory{
-		client:           client,
-		namespace:        v1.NamespaceAll,
+		client:           client, // clientSet
+		namespace:        v1.NamespaceAll, // 所有命名空间
 		defaultResync:    defaultResync,
 		informers:        make(map[reflect.Type]cache.SharedIndexInformer),
 		startedInformers: make(map[reflect.Type]bool),
@@ -131,9 +134,11 @@ func NewSharedInformerFactoryWithOptions(client kubernetes.Interface, defaultRes
 }
 
 func (f *sharedInformerFactory) Start(stopCh <-chan struct{}) {
+	// 加写锁
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	// 正在关闭 则返回
 	if f.shuttingDown {
 		return
 	}
@@ -234,8 +239,9 @@ func (f *sharedInformerFactory) InformerFor(obj runtime.Object, newFunc internal
 type SharedInformerFactory interface {
 	internalinterfaces.SharedInformerFactory
 
-	// Start initializes all requested informers. They are handled in goroutines
-	// which run until the stop channel gets closed.
+	// Start initializes all requested informers.
+	// They are handled in goroutines which run until the stop channel gets closed.
+	// Start: 初始化所有请求的 informers，它们在 goroutine 中处理，直到channel关闭
 	Start(stopCh <-chan struct{})
 
 	// Shutdown marks a factory as shutting down. At that point no new
@@ -255,10 +261,11 @@ type SharedInformerFactory interface {
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 
 	// ForResource gives generic access to a shared informer of the matching type.
+	// ForResource: 给予通用的访问一个匹配的 shared informer
 	ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
 
 	// InternalInformerFor returns the SharedIndexInformer for obj using an internal
-	// client.
+	// InformerFor: 使用一个内部的返回这个对象的 SharedIndexInformer
 	InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer
 
 	Admissionregistration() admissionregistration.Interface

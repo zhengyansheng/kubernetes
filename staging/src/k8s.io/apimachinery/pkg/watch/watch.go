@@ -29,11 +29,13 @@ import (
 type Interface interface {
 	// Stop stops watching. Will close the channel returned by ResultChan(). Releases
 	// any resources used by the watch.
+	// Stop: 停止 watching, 将要关闭 ResultChan() 返回的 channel。释放watch的所有的资源
 	Stop()
 
 	// ResultChan returns a chan which will receive all the events. If an error occurs
 	// or Stop() is called, the implementation will close this channel and
 	// release any resources used by the watch.
+	// ResultChan：返回一个chan，它将接收所有的事件，如果发生一个错误 或者 调用了 Stop()，释放watch的所有的资源
 	ResultChan() <-chan Event
 }
 

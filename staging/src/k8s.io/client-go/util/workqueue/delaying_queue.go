@@ -30,6 +30,7 @@ import (
 type DelayingInterface interface {
 	Interface
 	// AddAfter adds an item to the workqueue after the indicated duration has passed
+	// 在经过指定的持续时间后，将项目添加到工作队列
 	AddAfter(item interface{}, duration time.Duration)
 }
 
@@ -95,9 +96,12 @@ type delayingType struct {
 
 // waitFor holds the data to add and the time it should be added
 type waitFor struct {
-	data    t
+	// 添加的数据
+	data t
+	// 添加时的时间点
 	readyAt time.Time
 	// index in the priority queue (heap)
+	// 在优先级队列中的索引
 	index int
 }
 
@@ -168,6 +172,7 @@ func (q *delayingType) AddAfter(item interface{}, duration time.Duration) {
 	q.metrics.retry()
 
 	// immediately add things with no delay
+	// 立即添加内容，不要延迟
 	if duration <= 0 {
 		q.Add(item)
 		return
@@ -234,13 +239,13 @@ func (q *delayingType) waitingLoop() {
 		case <-q.stopCh:
 			return
 
-		case <-q.heartbeat.C():
+		case <-q.heartbeat.C(): // 10秒定时器
 			// continue the loop, which will add ready items
 
 		case <-nextReadyAt:
 			// continue the loop, which will add ready items
 
-		case waitEntry := <-q.waitingForAddCh:
+		case waitEntry := <-q.waitingForAddCh: // -> .AddAfter
 			if waitEntry.readyAt.After(q.clock.Now()) {
 				insert(waitingForQueue, waitingEntryByData, waitEntry)
 			} else {
@@ -265,12 +270,15 @@ func (q *delayingType) waitingLoop() {
 }
 
 // insert adds the entry to the priority queue, or updates the readyAt if it already exists in the queue
+/*
+insert: 添加条目到优先级队列中，或者 如果它在队列中存在，则更新这个条目的 readyAt 字段
+*/
 func insert(q *waitForPriorityQueue, knownEntries map[t]*waitFor, entry *waitFor) {
 	// if the entry already exists, update the time only if it would cause the item to be queued sooner
 	existing, exists := knownEntries[entry.data]
 	if exists {
 		if existing.readyAt.After(entry.readyAt) {
-			existing.readyAt = entry.readyAt
+			existing.readyAt = entry.readyAt // 更新 readyAt 字段
 			heap.Fix(q, existing.index)
 		}
 

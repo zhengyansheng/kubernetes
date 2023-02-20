@@ -19,7 +19,7 @@ package workqueue
 import (
 	"sync"
 	"time"
-	
+
 	"k8s.io/utils/clock"
 )
 
@@ -56,13 +56,13 @@ func newQueue(c clock.WithTicker, metrics queueMetrics, updatePeriod time.Durati
 		metrics:                    metrics,
 		unfinishedWorkUpdatePeriod: updatePeriod,
 	}
-	
+
 	// Don't start the goroutine for a type of noMetrics so we don't consume
 	// resources unnecessarily
 	if _, ok := metrics.(noMetrics); !ok {
 		go t.updateUnfinishedWorkLoop()
 	}
-	
+
 	return t
 }
 
@@ -73,24 +73,26 @@ type Type struct {
 	// queue defines the order in which we will work on items. Every
 	// element of queue should be in the dirty set and not in the
 	// processing set.
-	queue []t
-	
+	queue []t // []interface{}
+
 	// dirty defines all of the items that need to be processed.
+	// map[interface]struct{}
 	dirty set // 标记所有需要被处理的元素
-	
+
 	// Things that are currently being processed are in the processing set.
 	// These things may be simultaneously in the dirty set. When we finish
 	// processing something and remove it from this set, we'll check if
 	// it's in the dirty set, and if so, add it to the queue.
+	// map[interface]struct{}
 	processing set // 当前正在被处理的元素，当处理完成后，需要检查该元素是否在dirty集合中，如果在则添加到queue队列中
-	
+
 	cond *sync.Cond
-	
+
 	shuttingDown bool // 标记当前channel是否正在被关闭
 	drain        bool
-	
+
 	metrics queueMetrics
-	
+
 	unfinishedWorkUpdatePeriod time.Duration
 	clock                      clock.WithTicker
 }
@@ -117,24 +119,37 @@ func (s set) len() int {
 }
 
 // Add marks item as needing processing.
+/*
+Add: 标记它需要处理
+*/
 func (q *Type) Add(item interface{}) {
+	// 加 写锁
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
+
+	// 如果正在关闭
 	if q.shuttingDown {
 		return
 	}
+	// 如果 dirty 已经存在 则返回
 	if q.dirty.has(item) {
 		return
 	}
-	
+
 	q.metrics.add(item)
-	
+
+	// dirty不存在，则添加
 	q.dirty.insert(item)
+
+	// 如果 processing 已经存在，则返回
 	if q.processing.has(item) {
 		return
 	}
-	
+
+	// queue 队列中添加该 item
 	q.queue = append(q.queue, item)
+
+	// 唤醒
 	q.cond.Signal()
 }
 
@@ -148,47 +163,67 @@ func (q *Type) Len() int {
 }
 
 // Get blocks until it can return an item to be processed. If shutdown = true,
-// the caller should end their goroutine. You must call Done with item when you
-// have finished processing it.
+// the caller should end their goroutine.
+// You must call Done with item when you have finished processing it.
+/*
+Get: 阻塞 直到它可以返回要处理的item
+如果shutdown = true，调用者应该结束他们的goroutine,
+当你处理完成后，必须调用 Done
+*/
 func (q *Type) Get() (item interface{}, shutdown bool) {
+	// 加 写锁
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
+
+	// 队列长度为0 并且 队列没有关闭
 	for len(q.queue) == 0 && !q.shuttingDown {
-		q.cond.Wait()
+		q.cond.Wait() // 阻塞该方法所在的线程
 	}
+	// 队列长度为0 则返回
 	if len(q.queue) == 0 {
 		// We must be shutting down.
 		return nil, true
 	}
-	
+
+	// 获取 队列 的第一个元素
 	item = q.queue[0]
 	// The underlying array still exists and reference this object, so the object will not be garbage collected.
+	// 设置 队列 的第一个元素 为 nil
 	q.queue[0] = nil
+	// 队列 删除第一个元素
 	q.queue = q.queue[1:]
-	
+
 	q.metrics.get(item)
-	
+
+	// 添加 item 到 processing
 	q.processing.insert(item)
+
+	// 删除 item 从 dirty
 	q.dirty.delete(item)
-	
+
 	return item, false
 }
 
-// Done marks item as done processing, and if it has been marked as dirty again
-// while it was being processed, it will be re-added to the queue for
+// Done marks item as done processing, and if it has been marked as dirty again while it was being processed,
+// it will be re-added to the queue for
 // re-processing.
+/*
+Done: 标记 processing map中 元素已经完成，
+*/
 func (q *Type) Done(item interface{}) {
+	// 加 写锁
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
-	
+
 	q.metrics.done(item)
-	
+
+	// 从 processing map中删除这个item
 	q.processing.delete(item)
 	if q.dirty.has(item) {
 		q.queue = append(q.queue, item)
-		q.cond.Signal()
+		q.cond.Signal() // 唤醒最先因wait方法而阻塞的线程
 	} else if q.processing.len() == 0 {
-		q.cond.Signal()
+		q.cond.Signal() // 唤醒最先因wait方法而阻塞的线程
 	}
 }
 
@@ -261,7 +296,7 @@ func (q *Type) shutdown() {
 func (q *Type) ShuttingDown() bool {
 	q.cond.L.Lock()
 	defer q.cond.L.Unlock()
-	
+
 	return q.shuttingDown
 }
 
@@ -277,7 +312,7 @@ func (q *Type) updateUnfinishedWorkLoop() {
 				return true
 			}
 			return false
-			
+
 		}() {
 			return
 		}

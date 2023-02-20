@@ -89,14 +89,16 @@ type ProcessFunc func(obj interface{}, isInInitialList bool) error
 
 // `*controller` implements Controller
 type controller struct {
-	config         Config
-	reflector      *Reflector
-	reflectorMutex sync.RWMutex
-	clock          clock.Clock
+	config         Config       // 配置
+	reflector      *Reflector   // 实例化 reflector
+	reflectorMutex sync.RWMutex // 读写锁
+	clock          clock.Clock  // 定时器
 }
 
-// Controller is a low-level controller that is parameterized by a
-// Config and used in sharedIndexInformer.
+// Controller is a low-level controller that is parameterized by a Config and used in sharedIndexInformer.
+/*
+Controller: 是由 Config 参数化的一个低级别的controller，在 sharedIndexInformer 使用
+*/
 type Controller interface {
 	// Run does two things.  One is to construct and run a Reflector
 	// to pump objects/notifications from the Config's ListerWatcher
@@ -104,17 +106,26 @@ type Controller interface {
 	// on that Queue.  The other is to repeatedly Pop from the Queue
 	// and process with the Config's ProcessFunc.  Both of these
 	// continue until `stopCh` is closed.
+	/*
+		Run: 做2件事，
+		第一件事: 创建和运行一个 Reflector , 从 Config 的 ListerWatcher 推送对象和通知 到 Config 的队列，可能偶尔的会 Resync 在队列上。
+		第二件事: 从 Queue 队列中反复 Pop 使用 Config 的 ProcessFunc 函数
+		直到 stopCh 管道 关闭.
+	*/
 	Run(stopCh <-chan struct{})
 
 	// HasSynced delegates to the Config's Queue
+	// Config 的队列是否同步完成
 	HasSynced() bool
 
-	// LastSyncResourceVersion delegates to the Reflector when there
-	// is one, otherwise returns the empty string
+	// LastSyncResourceVersion delegates to the Reflector when there is one,
+	// otherwise returns the empty string
+	//
 	LastSyncResourceVersion() string
 }
 
 // New makes a new Controller from the given Config.
+// 实例化 controller
 func New(c *Config) Controller {
 	ctlr := &controller{
 		config: *c,
@@ -129,9 +140,12 @@ func New(c *Config) Controller {
 func (c *controller) Run(stopCh <-chan struct{}) {
 	defer utilruntime.HandleCrash()
 	go func() {
+		// 阻塞 关闭queue
 		<-stopCh
 		c.config.Queue.Close()
 	}()
+
+	// 实例化 Reflector
 	r := NewReflectorWithOptions(
 		c.config.ListerWatcher,
 		c.config.ObjectType,
@@ -148,19 +162,26 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 		r.watchErrorHandler = c.config.WatchErrorHandler
 	}
 
+	// 写锁 赋值
 	c.reflectorMutex.Lock()
 	c.reflector = r
 	c.reflectorMutex.Unlock()
 
+	// 声明 wait.Group
 	var wg wait.Group
 
+	// 生产者
+	// goroutine 启动 reflector，间接的启动 ListAndWatch
 	wg.StartWithChannel(stopCh, r.Run)
 
+	// 消费者
 	wait.Until(c.processLoop, time.Second, stopCh)
+
+	// 阻塞等待完成
 	wg.Wait()
 }
 
-// Returns true once this controller has completed an initial resource listing
+// HasSynced Returns true once this controller has completed an initial resource listing
 func (c *controller) HasSynced() bool {
 	return c.config.Queue.HasSynced()
 }
@@ -185,15 +206,13 @@ func (c *controller) LastSyncResourceVersion() string {
 // also be helpful.
 func (c *controller) processLoop() {
 	for {
-		// Queue -> deltaFIFO
-		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process)) // type ProcessFunc func(obj interface{}, isInInitialList bool) error
+		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
 		if err != nil {
 			if err == ErrFIFOClosed {
 				return
 			}
 			if c.config.RetryOnError {
 				// This is the safe way to re-enqueue.
-				// 如果失败了在重新入队
 				c.config.Queue.AddIfNotPresent(obj)
 			}
 		}
@@ -360,25 +379,19 @@ func NewInformer(
 ) (Store, Controller) {
 	// This will hold the client state, as we know it.
 	clientState := NewStore(DeletionHandlingMetaNamespaceKeyFunc)
-	/*
-		lw: listwatch
-		objType: v1.Pod
-		resyncPeriod: 同步周期
-		clientState: store
-		h: ResourceEventHandlerDetailedFuncs
-	*/
 
 	return clientState, newInformer(lw, objType, resyncPeriod, h, clientState, nil)
 }
 
 // NewIndexerInformer returns an Indexer and a Controller for populating the index
-// while also providing event notifications. You should only used the returned
-// Index for Get/List operations; Add/Modify/Deletes will cause the event
-// notifications to be faulty.
+// while also providing event notifications.
+// You should only used the returned Index for Get/List operations;
+// Add/Modify/Deletes will cause the event notifications to be faulty.
 //
-// Parameters:
+// Parameters:参数
 //   - lw is list and watch functions for the source of the resource you want to
 //     be informed of.
+//     objType是您希望接收的类型的对象
 //   - objType is an object of the type that you expect to receive.
 //   - resyncPeriod: if non-zero, will re-list this often (you will get OnUpdate
 //     calls, even if nothing changed). Otherwise, re-list will be delayed as
@@ -386,6 +399,11 @@ func NewInformer(
 //     or you stop the controller).
 //   - h is the object you want notifications sent to.
 //   - indexers is the indexer for the received object type.
+/*
+NewIndexerInformer: 返回一个 Indexer 和 一个 用于填充索引的 Controller，同时还提供事件通知机制
+Index 只用于 Get/List 操作
+
+*/
 func NewIndexerInformer(
 	lw ListerWatcher,
 	objType runtime.Object,
@@ -472,25 +490,20 @@ func processDeltas(
 			}
 		}
 
-		// clientState 就是 threadSafeMap
 		switch d.Type {
 		case Sync, Replaced, Added, Updated:
-			// 查询 threadSafeMap 是否存在这个对象，
 			if old, exists, err := clientState.Get(obj); err == nil && exists {
-				// 存在就更新
 				if err := clientState.Update(obj); err != nil {
 					return err
 				}
 				handler.OnUpdate(old, obj)
 			} else {
-				// 不存在就添加到 indexer
 				if err := clientState.Add(obj); err != nil {
 					return err
 				}
 				handler.OnAdd(obj, isInInitialList)
 			}
 		case Deleted:
-			// 从 indexer 删除
 			if err := clientState.Delete(obj); err != nil {
 				return err
 			}
@@ -530,7 +543,7 @@ func newInformer(
 	})
 
 	cfg := &Config{
-		Queue:            fifo, //deltaFIFO
+		Queue:            fifo,
 		ListerWatcher:    lw,
 		ObjectType:       objType,
 		FullResyncPeriod: resyncPeriod,
