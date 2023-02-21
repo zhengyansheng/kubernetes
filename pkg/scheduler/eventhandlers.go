@@ -185,10 +185,12 @@ func (sched *Scheduler) addPodToCache(obj interface{}) {
 	}
 	klog.V(3).InfoS("Add event for scheduled pod", "pod", klog.KObj(pod))
 
+	// 添加pod到 cache 中
 	if err := sched.Cache.AddPod(pod); err != nil {
 		klog.ErrorS(err, "Scheduler cache AddPod failed", "pod", klog.KObj(pod))
 	}
 
+	// 添加 pod 到 PriorityQueue 队列中
 	sched.SchedulingQueue.AssignedPodAdded(pod)
 }
 
@@ -260,6 +262,7 @@ func addAllEventHandlers(
 			FilterFunc: func(obj interface{}) bool {
 				switch t := obj.(type) {
 				case *v1.Pod:
+					// 判断 nodeName 字段是否为空
 					return assignedPod(t)
 				case cache.DeletedFinalStateUnknown:
 					if _, ok := t.Obj.(*v1.Pod); ok {
@@ -275,8 +278,11 @@ func addAllEventHandlers(
 				}
 			},
 			Handler: cache.ResourceEventHandlerFuncs{
-				AddFunc:    sched.addPodToCache,
+				// add pod
+				AddFunc: sched.addPodToCache,
+				// update pod
 				UpdateFunc: sched.updatePodInCache,
+				// delete pod
 				DeleteFunc: sched.deletePodFromCache,
 			},
 		},
@@ -287,6 +293,7 @@ func addAllEventHandlers(
 			FilterFunc: func(obj interface{}) bool {
 				switch t := obj.(type) {
 				case *v1.Pod:
+					// 指定了 nodeName
 					return !assignedPod(t) && responsibleForPod(t, sched.Profiles)
 				case cache.DeletedFinalStateUnknown:
 					if pod, ok := t.Obj.(*v1.Pod); ok {
@@ -309,6 +316,7 @@ func addAllEventHandlers(
 		},
 	)
 
+	// Nodes cache
 	informerFactory.Core().V1().Nodes().Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    sched.addNodeToCache,

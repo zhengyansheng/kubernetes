@@ -71,22 +71,26 @@ var allClusterEvents = []framework.ClusterEvent{
 // frameworkImpl is the component responsible for initializing and running scheduler
 // plugins.
 type frameworkImpl struct {
+	// 注册表，保存了所有的插件
 	registry             Registry
 	snapshotSharedLister framework.SharedLister
 	waitingPods          *waitingPodsMap
-	scorePluginWeight    map[string]int
-	preEnqueuePlugins    []framework.PreEnqueuePlugin
-	queueSortPlugins     []framework.QueueSortPlugin
-	preFilterPlugins     []framework.PreFilterPlugin
-	filterPlugins        []framework.FilterPlugin
-	postFilterPlugins    []framework.PostFilterPlugin
-	preScorePlugins      []framework.PreScorePlugin
-	scorePlugins         []framework.ScorePlugin
-	reservePlugins       []framework.ReservePlugin
-	preBindPlugins       []framework.PreBindPlugin
-	bindPlugins          []framework.BindPlugin
-	postBindPlugins      []framework.PostBindPlugin
-	permitPlugins        []framework.PermitPlugin
+	// 插件名称和权重的映射
+	scorePluginWeight map[string]int
+
+	// 调度插件接口
+	preEnqueuePlugins []framework.PreEnqueuePlugin
+	queueSortPlugins  []framework.QueueSortPlugin
+	preFilterPlugins  []framework.PreFilterPlugin
+	filterPlugins     []framework.FilterPlugin
+	postFilterPlugins []framework.PostFilterPlugin
+	preScorePlugins   []framework.PreScorePlugin
+	scorePlugins      []framework.ScorePlugin
+	reservePlugins    []framework.ReservePlugin
+	preBindPlugins    []framework.PreBindPlugin
+	bindPlugins       []framework.BindPlugin
+	postBindPlugins   []framework.PostBindPlugin
+	permitPlugins     []framework.PermitPlugin
 
 	clientSet       clientset.Interface
 	kubeConfig      *restclient.Config
@@ -281,6 +285,7 @@ func NewFramework(r Registry, profile *config.KubeSchedulerProfile, stopCh <-cha
 	}
 
 	// get needed plugins from config
+	// 从配置中获取所需的插件
 	pg := f.pluginsNeeded(profile.Plugins)
 
 	pluginConfig := make(map[string]runtime.Object, len(profile.PluginConfig))
@@ -736,16 +741,19 @@ func (f *frameworkImpl) RunFilterPlugins(
 	pod *v1.Pod,
 	nodeInfo *framework.NodeInfo,
 ) *framework.Status {
+	// 同步执行所有的filter plugin
 	for _, pl := range f.filterPlugins {
 		if state.SkipFilterPlugins.Has(pl.Name()) {
 			continue
 		}
 		if status := f.runFilterPlugin(ctx, pl, state, pod, nodeInfo); !status.IsSuccess() {
+			// 如果插件返回的不是不可调度，那只能是内部错误，那么就直接返回错误，因为内部错误后续是无法解决的，抢占也不行
 			if !status.IsUnschedulable() {
-				// Filter plugins are not supposed to return any status other than
-				// Success or Unschedulable.
+				// Filter plugins are not supposed to return any status other than Success or Unschedulable.
+				// Filter plugins 不应返回除“Success”或“Unschedulable”之外的任何状态
 				status = framework.AsStatus(fmt.Errorf("running %q filter plugin: %w", pl.Name(), status.AsError()))
 			}
+			// 记录失败插件的名称
 			status.SetFailedPlugin(pl.Name())
 			return status
 		}
@@ -934,6 +942,8 @@ func (f *frameworkImpl) RunScorePlugins(ctx context.Context, state *framework.Cy
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(score, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
 	allNodePluginScores := make([]framework.NodePluginScores, len(nodes))
+	// pluginToNodeScores: {"": [{"name": "node_name",  "score": "node_score"}, {}]}
+	// 这里的nodes是 runFilterPlugins 的返回的nodes
 	pluginToNodeScores := make(map[string]framework.NodeScoreList, len(f.scorePlugins))
 	for _, pl := range f.scorePlugins {
 		pluginToNodeScores[pl.Name()] = make(framework.NodeScoreList, len(nodes))
@@ -1074,10 +1084,12 @@ func (f *frameworkImpl) RunBindPlugins(ctx context.Context, state *framework.Cyc
 	defer func() {
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(bind, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
+	// 如果没有配置绑定插件则直接退出
 	if len(f.bindPlugins) == 0 {
 		return framework.NewStatus(framework.Skip, "")
 	}
 	for _, pl := range f.bindPlugins {
+		// 执行绑定插件
 		status = f.runBindPlugin(ctx, pl, state, pod, nodeName)
 		if status.IsSkip() {
 			continue
@@ -1092,6 +1104,7 @@ func (f *frameworkImpl) RunBindPlugins(ctx context.Context, state *framework.Cyc
 			klog.ErrorS(err, "Failed running Bind plugin", "plugin", pl.Name(), "pod", klog.KObj(pod), "node", nodeName)
 			return framework.AsStatus(fmt.Errorf("running Bind plugin %q: %w", pl.Name(), err))
 		}
+		// 如果绑定成功，直接结束
 		return status
 	}
 	return status
@@ -1099,10 +1112,10 @@ func (f *frameworkImpl) RunBindPlugins(ctx context.Context, state *framework.Cyc
 
 func (f *frameworkImpl) runBindPlugin(ctx context.Context, bp framework.BindPlugin, state *framework.CycleState, pod *v1.Pod, nodeName string) *framework.Status {
 	if !state.ShouldRecordPluginMetrics() {
-		return bp.Bind(ctx, state, pod, nodeName)
+		return bp.Bind(ctx, state, pod, nodeName) // 绑定
 	}
 	startTime := time.Now()
-	status := bp.Bind(ctx, state, pod, nodeName)
+	status := bp.Bind(ctx, state, pod, nodeName) // 绑定
 	f.metricsRecorder.observePluginDurationAsync(bind, bp.Name(), status, metrics.SinceInSeconds(startTime))
 	return status
 }

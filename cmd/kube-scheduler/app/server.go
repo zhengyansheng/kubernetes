@@ -341,6 +341,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		cc.DynInformerFactory,
 		recorderFactory,
 		ctx.Done(),
+		// options ...
 		scheduler.WithComponentConfigVersion(cc.ComponentConfig.TypeMeta.APIVersion),
 		scheduler.WithKubeConfig(cc.KubeConfig),
 		scheduler.WithProfiles(cc.ComponentConfig.Profiles...),

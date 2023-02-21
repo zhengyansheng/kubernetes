@@ -60,8 +60,10 @@ const (
 )
 
 // scheduleOne does the entire scheduling workflow for a single pod. It is serialized on the scheduling algorithm's host fitting.
+// scheduleOne为单个pod执行整个调度工作流
+// 一次只能调度一个pod
 func (sched *Scheduler) scheduleOne(ctx context.Context) {
-	podInfo := sched.NextPod()
+	podInfo := sched.NextPod() // -> Queue.Pop()
 	// pod could be nil when schedulerQueue is closed
 	if podInfo == nil || podInfo.Pod == nil {
 		return
@@ -74,6 +76,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 		klog.ErrorS(err, "Error occurred")
 		return
 	}
+	// 跳过pod
 	if sched.skipPodSchedule(fwk, pod) {
 		return
 	}
@@ -89,9 +92,11 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 	podsToActivate := framework.NewPodsToActivate()
 	state.Write(framework.PodsToActivateKey, podsToActivate)
 
+	// 初始化 context
 	schedulingCycleCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// 调度周期
 	scheduleResult, assumedPodInfo, status := sched.schedulingCycle(schedulingCycleCtx, state, fwk, podInfo, start, podsToActivate)
 	if !status.IsSuccess() {
 		sched.FailureHandler(schedulingCycleCtx, fwk, assumedPodInfo, status, scheduleResult.nominatingInfo, start)
@@ -108,6 +113,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 		metrics.Goroutines.WithLabelValues(metrics.Binding).Inc()
 		defer metrics.Goroutines.WithLabelValues(metrics.Binding).Dec()
 
+		// 绑定 pod : node
 		status := sched.bindingCycle(bindingCycleCtx, state, fwk, scheduleResult, assumedPodInfo, start, podsToActivate)
 		if !status.IsSuccess() {
 			sched.handleBindingCycleError(bindingCycleCtx, state, fwk, assumedPodInfo, start, scheduleResult, status)
@@ -310,8 +316,10 @@ func (sched *Scheduler) frameworkForPod(pod *v1.Pod) (framework.Framework, error
 }
 
 // skipPodSchedule returns true if we could skip scheduling the pod for specified cases.
+// 如果我们可以跳过特定情况下的pod调度，skipPodSchedule返回true
 func (sched *Scheduler) skipPodSchedule(fwk framework.Framework, pod *v1.Pod) bool {
 	// Case 1: pod is being deleted.
+	// pod 正在被删除
 	if pod.DeletionTimestamp != nil {
 		fwk.EventRecorder().Eventf(pod, nil, v1.EventTypeWarning, "FailedScheduling", "Scheduling", "skip schedule deleting pod: %v/%v", pod.Namespace, pod.Name)
 		klog.V(3).InfoS("Skip schedule deleting pod", "pod", klog.KObj(pod))

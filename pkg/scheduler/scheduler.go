@@ -84,6 +84,7 @@ type Scheduler struct {
 	StopEverything <-chan struct{}
 
 	// SchedulingQueue holds pods to be scheduled
+	// SchedulengQueue保存要调度的pod
 	SchedulingQueue internalqueue.SchedulingQueue
 
 	// Profiles are the scheduling profiles.
@@ -349,18 +350,27 @@ func New(client clientset.Interface,
 }
 
 // Run begins watching and scheduling. It starts scheduling and blocked until the context is done.
+// Run: 开始 watch 和 scheduler. 它启动调度并阻塞直到上下文完成
 func (sched *Scheduler) Run(ctx context.Context) {
+	// SchedulingQueue 的生产者 发送到 backoffQ and activeQ
 	sched.SchedulingQueue.Run()
 
 	// We need to start scheduleOne loop in a dedicated goroutine,
-	// because scheduleOne function hangs on getting the next item
-	// from the SchedulingQueue.
-	// If there are no new pods to schedule, it will be hanging there
-	// and if done in this goroutine it will be blocking closing
-	// SchedulingQueue, in effect causing a deadlock on shutdown.
-	go wait.UntilWithContext(ctx, sched.scheduleOne, 0)
+	// because scheduleOne function hangs on getting the next item from the SchedulingQueue.
+	// If there are no new pods to schedule
+	// it will be hanging there and if done in this goroutine it will be blocking closing SchedulingQueue,
+	// in effect causing a deadlock on shutdown.
+	/*
+		我们需要去启动 scheduleOne 循环， 在一个专用的 goroutine 中
+		因为 scheduleOne 函数挂起 从 SchedulengQueue 获取下一项
+		如果没有新的 Pod 要被调度
+		在这个 goroutine 中如果完成，它将要挂起在这里，它阻止关闭 SchedulingQueue
+	*/
+	go wait.UntilWithContext(ctx, sched.scheduleOne, 0) // 从 SchedulingQueue 消费
 
+	// 阻塞
 	<-ctx.Done()
+	// 关闭 Scheduling Queue
 	sched.SchedulingQueue.Close()
 }
 

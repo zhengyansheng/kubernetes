@@ -42,7 +42,7 @@ func newProfile(cfg config.KubeSchedulerProfile, r frameworkruntime.Registry, re
 }
 
 // Map holds frameworks indexed by scheduler name.
-// {"default-scheduler": "", '":""}
+// {"default-scheduler": "xxx", '":""}
 type Map map[string]framework.Framework
 
 // NewMap builds the frameworks given by the configuration, indexed by name.
@@ -56,6 +56,7 @@ func NewMap(cfgs []config.KubeSchedulerProfile, r frameworkruntime.Registry, rec
 		if err != nil {
 			return nil, fmt.Errorf("creating profile for scheduler name %s: %v", cfg.SchedulerName, err)
 		}
+		// 校验
 		if err := v.validate(cfg, p); err != nil {
 			return nil, err
 		}

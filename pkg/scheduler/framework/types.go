@@ -87,24 +87,26 @@ func (ce ClusterEvent) IsWildCard() bool {
 	return ce.Resource == WildCard && ce.ActionType == All
 }
 
-// QueuedPodInfo is a Pod wrapper with additional information related to
-// the pod's status in the scheduling queue, such as the timestamp when
-// it's added to the queue.
+// QueuedPodInfo is a Pod wrapper with additional information related to the pod's status in the scheduling queue,
+// such as the timestamp when it's added to the queue.
 type QueuedPodInfo struct {
 	*PodInfo
 	// The time pod added to the scheduling queue.
+	// 添加到队列的时间
 	Timestamp time.Time
 	// Number of schedule attempts before successfully scheduled.
 	// It's used to record the # attempts metric.
+	// 在调度成功之前 尝试的次数
 	Attempts int
-	// The time when the pod is added to the queue for the first time. The pod may be added
-	// back to the queue multiple times before it's successfully scheduled.
-	// It shouldn't be updated once initialized. It's used to record the e2e scheduling
-	// latency for a pod.
+	// The time when the pod is added to the queue for the first time.
+	// The pod may be added back to the queue multiple times before it's successfully scheduled.
+	// It shouldn't be updated once initialized. It's used to record the e2e scheduling latency for a pod.
 	InitialAttemptTimestamp time.Time
 	// If a Pod failed in a scheduling cycle, record the plugin names it failed by.
+	// 如果Pod在调度周期中失败，记录其失败的插件名称
 	UnschedulablePlugins sets.String
 	// Whether the Pod is scheduling gated (by PreEnqueuePlugins) or not.
+	// 是否被调度
 	Gated bool
 }
 
