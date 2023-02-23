@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -239,10 +240,25 @@ func TestImageLocalityPriority(t *testing.T) {
 			// Node2
 			// Image: gcr.io/250:latest 250MB
 			// Score: 100 * (250M/2 - 23M)/(1000M * 2 - 23M) = 5
+
+			// int64(framework.MaxNodeScore) * (sumScores - minThreshold) / (maxThreshold - minThreshold)
+			// （有镜像的节点数量 / 预选的节点总数）* 镜像大小
+			// 100 * (sumScores/节点个数 - 23M) / (1000M * 容器个数 - 23M)
 			pod:          &v1.Pod{Spec: test40250},
 			nodes:        []*v1.Node{makeImageNode("node1", node403002000), makeImageNode("node2", node25010)},
 			expectedList: []framework.NodeScore{{Name: "node1", Score: 0}, {Name: "node2", Score: 5}},
 			name:         "two images spread on two nodes, prefer the larger image one",
+			/*
+				pod 有2个容器
+					- gcr.io/40
+					- gcr.io/250
+
+				node1 score
+					- 100 * ( (containerImageSize1 + containerImageSize2 + ...) /  预选合适的节点个数 - 23M ) / (1000M * containerNum - 23M)
+					- 100 * ( (40 + 0 ) / 2 - 23M ) / (1000 * 2 - 23M)  结果肯定小于0
+				node2 socre
+					- 100 * ( (0 + 250) / 2 -23M)/ (1000 * 2 - 23M) = 5
+			*/
 		},
 		{
 			// Pod: gcr.io/40 gcr.io/300
@@ -250,6 +266,7 @@ func TestImageLocalityPriority(t *testing.T) {
 			// Node1
 			// Image: gcr.io/40:latest 40MB, gcr.io/300:latest 300MB
 			// Score: 100 * ((40M + 300M)/2 - 23M)/(1000M * 2 - 23M) = 7
+			// int64(framework.MaxNodeScore) * ((containerImageSize + ...) / 节点个数 - minThreshold) / (maxThreshold - minThreshold)
 
 			// Node2
 			// Image: not present
@@ -346,6 +363,7 @@ func TestImageLocalityPriority(t *testing.T) {
 				if !status.IsSuccess() {
 					t.Errorf("unexpected error: %v", status)
 				}
+				fmt.Printf("alias: %v, name: %v, score: %v\n", test.name, nodeName, score)
 				gotList = append(gotList, framework.NodeScore{Name: nodeName, Score: score})
 			}
 

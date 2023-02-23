@@ -374,8 +374,10 @@ func getNamespacesFromPodAffinityTerm(pod *v1.Pod, podAffinityTerm *v1.PodAffini
 // ImageStateSummary provides summarized information about the state of an image.
 type ImageStateSummary struct {
 	// Size of the image
+	// 镜像的大小
 	Size int64
 	// Used to track how many nodes have this image
+	// 用于跟踪有多少节点具有此图像
 	NumNodes int
 }
 

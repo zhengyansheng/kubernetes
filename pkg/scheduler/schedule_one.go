@@ -46,6 +46,7 @@ import (
 
 const (
 	// Percentage of plugin metrics to be sampled.
+	// 要采样的插件度量的百分比
 	pluginMetricsSamplePercent = 10
 	// minFeasibleNodesToFind is the minimum number of nodes that would be scored
 	// in each scheduling cycle. This is a semi-arbitrary value to ensure that a
@@ -65,10 +66,12 @@ const (
 func (sched *Scheduler) scheduleOne(ctx context.Context) {
 	podInfo := sched.NextPod() // -> Queue.Pop()
 	// pod could be nil when schedulerQueue is closed
+	// 当schedulerQueue关闭时，pod可能为nil
 	if podInfo == nil || podInfo.Pod == nil {
 		return
 	}
 	pod := podInfo.Pod
+	// 判断 scheduleName 是否匹配 default-scheduler
 	fwk, err := sched.frameworkForPod(pod)
 	if err != nil {
 		// This shouldn't happen, because we only accept for scheduling the pods
@@ -84,6 +87,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 	klog.V(3).InfoS("Attempting to schedule pod", "pod", klog.KObj(pod))
 
 	// Synchronously attempt to find a fit for the pod.
+	// 同步尝试找到适合Pod 位置
 	start := time.Now()
 	state := framework.NewCycleState()
 	state.SetRecordPluginMetrics(rand.Intn(100) < pluginMetricsSamplePercent)
@@ -104,7 +108,9 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 	}
 
 	// bind the pod to its host asynchronously (we can do this b/c of the assumption step above).
+	// 异步的绑定这个pod到它的host
 	go func() {
+		// 初始化 context
 		bindingCycleCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
@@ -113,9 +119,10 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 		metrics.Goroutines.WithLabelValues(metrics.Binding).Inc()
 		defer metrics.Goroutines.WithLabelValues(metrics.Binding).Dec()
 
-		// 绑定 pod : node
+		// 绑定周期 pod : node
 		status := sched.bindingCycle(bindingCycleCtx, state, fwk, scheduleResult, assumedPodInfo, start, podsToActivate)
 		if !status.IsSuccess() {
+			// 绑定失败，做事后的清理工作
 			sched.handleBindingCycleError(bindingCycleCtx, state, fwk, assumedPodInfo, start, scheduleResult, status)
 		}
 	}()
@@ -132,7 +139,9 @@ func (sched *Scheduler) schedulingCycle(
 	start time.Time,
 	podsToActivate *framework.PodsToActivate,
 ) (ScheduleResult, *framework.QueuedPodInfo, *framework.Status) {
+
 	pod := podInfo.Pod
+	// 要绑定的 node
 	scheduleResult, err := sched.SchedulePod(ctx, fwk, state, pod)
 	if err != nil {
 		if err == ErrNoNodesAvailable {
@@ -173,12 +182,15 @@ func (sched *Scheduler) schedulingCycle(
 		return ScheduleResult{nominatingInfo: nominatingInfo}, podInfo, framework.NewStatus(framework.Unschedulable).WithError(err)
 	}
 
+	// assumed 相关代码不需要关心
 	metrics.SchedulingAlgorithmLatency.Observe(metrics.SinceInSeconds(start))
 	// Tell the cache to assume that a pod now is running on a given node, even though it hasn't been bound yet.
 	// This allows us to keep scheduling without waiting on binding to occur.
+	// 告诉缓存假设一个pod现在正在给定节点上运行，即使它尚未绑定 这允许我们保持调度，而无需等待绑定发生
 	assumedPodInfo := podInfo.DeepCopy()
 	assumedPod := assumedPodInfo.Pod
 	// assume modifies `assumedPod` by setting NodeName=scheduleResult.SuggestedHost
+	// 假设修改 `assumedPod` 修改 nodeName = SchedulePod中的host
 	err = sched.assume(assumedPod, scheduleResult.SuggestedHost)
 	if err != nil {
 		// This is most probably result of a BUG in retrying logic.
@@ -219,6 +231,7 @@ func (sched *Scheduler) schedulingCycle(
 	}
 
 	// At the end of a successful scheduling cycle, pop and move up Pods if needed.
+	// 在成功的调度周期结束时，如果需要，弹出并移动吊舱
 	if len(podsToActivate.Map) != 0 {
 		sched.SchedulingQueue.Activate(podsToActivate.Map)
 		// Clear the entries after activation.
@@ -353,7 +366,7 @@ func (sched *Scheduler) schedulePod(ctx context.Context, fwk framework.Framework
 		return result, ErrNoNodesAvailable
 	}
 
-	// 1. 预选，查找nodes匹配合适的pod
+	// 1. 预选，查找nodes匹配到合适的pod
 	feasibleNodes, diagnosis, err := sched.findNodesThatFitPod(ctx, fwk, state, pod)
 	if err != nil {
 		return result, err
@@ -401,6 +414,7 @@ func (sched *Scheduler) findNodesThatFitPod(ctx context.Context, fwk framework.F
 		UnschedulablePlugins: sets.NewString(),
 	}
 
+	// 快照
 	allNodes, err := sched.nodeInfoSnapshot.NodeInfos().List()
 	if err != nil {
 		return nil, diagnosis, err

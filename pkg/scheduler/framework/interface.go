@@ -517,17 +517,16 @@ type Framework interface {
 	Handle
 
 	// PreEnqueuePlugins returns the registered preEnqueue plugins.
+	// 返回注册的preEnqueue插件
 	PreEnqueuePlugins() []PreEnqueuePlugin
 
 	// QueueSortFunc returns the function to sort pods in scheduling queue
 	QueueSortFunc() LessFunc
 
-	// RunPreFilterPlugins runs the set of configured PreFilter plugins. It returns
-	// *Status and its code is set to non-success if any of the plugins returns
-	// anything but Success. If a non-success status is returned, then the scheduling
-	// cycle is aborted.
-	// It also returns a PreFilterResult, which may influence what or how many nodes to
-	// evaluate downstream.
+	// RunPreFilterPlugins runs the set of configured PreFilter plugins.
+	// It returns *Status and its code is set to non-success if any of the plugins returns anything but Success.
+	// If a non-success status is returned, then the scheduling cycle is aborted.
+	// It also returns a PreFilterResult, which may influence what or how many nodes to evaluate downstream.
 	RunPreFilterPlugins(ctx context.Context, state *CycleState, pod *v1.Pod) (*PreFilterResult, *Status)
 
 	// RunPostFilterPlugins runs the set of configured PostFilter plugins.

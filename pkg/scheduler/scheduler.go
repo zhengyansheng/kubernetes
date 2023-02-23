@@ -286,17 +286,18 @@ func New(client clientset.Interface,
 	nodeLister := informerFactory.Core().V1().Nodes().Lister()
 
 	// The nominator will be passed all the way to framework instantiation.
-	nominator := internalqueue.NewPodNominator(podLister)
-	snapshot := internalcache.NewEmptySnapshot() // node
+	nominator := internalqueue.NewPodNominator(podLister) // indexer
+	snapshot := internalcache.NewEmptySnapshot()          // node
 	clusterEventMap := make(map[framework.ClusterEvent]sets.String)
 
+	// profiles: ->  {default-scheduler: frameworkImpl实现}
 	profiles, err := profile.NewMap(options.profiles, registry, recorderFactory, stopCh,
 		frameworkruntime.WithComponentConfigVersion(options.componentConfigVersion),
 		frameworkruntime.WithClientSet(client),
 		frameworkruntime.WithKubeConfig(options.kubeConfig),
 		frameworkruntime.WithInformerFactory(informerFactory),
 		frameworkruntime.WithSnapshotSharedLister(snapshot),
-		frameworkruntime.WithPodNominator(nominator),
+		frameworkruntime.WithPodNominator(nominator), // indexer
 		frameworkruntime.WithCaptureProfile(frameworkruntime.CaptureProfile(options.frameworkCapturer)),
 		frameworkruntime.WithClusterEventMap(clusterEventMap),
 		frameworkruntime.WithParallelism(int(options.parallelism)),
@@ -344,6 +345,7 @@ func New(client clientset.Interface,
 	}
 	sched.applyDefaultHandlers()
 
+	// 核心 scheduleQueue 生产者
 	addAllEventHandlers(sched, informerFactory, dynInformerFactory, unionedGVKs(clusterEventMap))
 
 	return sched, nil
@@ -352,7 +354,7 @@ func New(client clientset.Interface,
 // Run begins watching and scheduling. It starts scheduling and blocked until the context is done.
 // Run: 开始 watch 和 scheduler. 它启动调度并阻塞直到上下文完成
 func (sched *Scheduler) Run(ctx context.Context) {
-	// SchedulingQueue 的生产者 发送到 backoffQ and activeQ
+	// SchedulingQueue 的生产者，会将 backoffQ 和 unschedulableQ 的 pod 发送到 activeQ
 	sched.SchedulingQueue.Run()
 
 	// We need to start scheduleOne loop in a dedicated goroutine,

@@ -692,7 +692,7 @@ func (cache *cacheImpl) addNodeImageStates(node *v1.Node, nodeInfo *framework.No
 			state, ok := cache.imageStates[name]
 			if !ok {
 				state = &imageState{
-					size:  image.SizeBytes,
+					size:  image.SizeBytes, // 镜像的大小
 					nodes: sets.NewString(node.Name),
 				}
 				cache.imageStates[name] = state

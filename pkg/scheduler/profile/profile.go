@@ -60,6 +60,7 @@ func NewMap(cfgs []config.KubeSchedulerProfile, r frameworkruntime.Registry, rec
 		if err := v.validate(cfg, p); err != nil {
 			return nil, err
 		}
+		// default-scheduler: frameworkImpl实现
 		m[cfg.SchedulerName] = p
 	}
 	return m, nil

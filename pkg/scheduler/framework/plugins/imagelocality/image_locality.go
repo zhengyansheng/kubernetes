@@ -27,8 +27,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/names"
 )
 
-// The two thresholds are used as bounds for the image score range. They correspond to a reasonable size range for
-// container images compressed and stored in registries; 90%ile of images on dockerhub drops into this range.
+// The two thresholds are used as bounds for the image score range.
+// They correspond to a reasonable size range for container images compressed and stored in registries;
+// 90%ile of images on dockerhub drops into this range.
 const (
 	mb                    int64 = 1024 * 1024
 	minThreshold          int64 = 23 * mb
@@ -52,17 +53,21 @@ func (pl *ImageLocality) Name() string {
 
 // Score invoked at the score extension point.
 func (pl *ImageLocality) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
+	// 从快照中查找 node
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return 0, framework.AsStatus(fmt.Errorf("getting node %q from Snapshot: %w", nodeName, err))
 	}
 
+	// 从快照中获取所有的node
 	nodeInfos, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
 		return 0, framework.AsStatus(err)
 	}
 	totalNumNodes := len(nodeInfos)
 
+	// 计算打分
+	// （有镜像的节点数量 / 预选的节点总数）* 镜像大小
 	score := calculatePriority(sumImageScores(nodeInfo, pod.Spec.Containers, totalNumNodes), len(pod.Spec.Containers))
 
 	return score, nil
@@ -78,16 +83,19 @@ func New(_ runtime.Object, h framework.Handle) (framework.Plugin, error) {
 	return &ImageLocality{handle: h}, nil
 }
 
-// calculatePriority returns the priority of a node. Given the sumScores of requested images on the node, the node's
-// priority is obtained by scaling the maximum priority value with a ratio proportional to the sumScores.
+// calculatePriority returns the priority of a node.
+// Given the sumScores of requested images on the node,
+// the node's priority is obtained by scaling the maximum priority value with a ratio proportional to the sumScores.
 func calculatePriority(sumScores int64, numContainers int) int64 {
+	// maxThreshold =（ 1000 * 1024 * 1024 ） * 1
 	maxThreshold := maxContainerThreshold * int64(numContainers)
-	if sumScores < minThreshold {
-		sumScores = minThreshold
-	} else if sumScores > maxThreshold {
+	if sumScores < minThreshold { // 23 * 1024 * 1024
+		sumScores = minThreshold // 如果sumScores < 23M 那么得分就直接为0 {sumScores - minThreshold <0}
+	} else if sumScores > maxThreshold { // 1000 * containerNum * 1024 * 1024
 		sumScores = maxThreshold
 	}
 
+	//
 	return int64(framework.MaxNodeScore) * (sumScores - minThreshold) / (maxThreshold - minThreshold)
 }
 
@@ -97,6 +105,7 @@ func calculatePriority(sumScores int64, numContainers int) int64 {
 func sumImageScores(nodeInfo *framework.NodeInfo, containers []v1.Container, totalNumNodes int) int64 {
 	var sum int64
 	for _, container := range containers {
+		// normalizedImageName -> xx/xx/xx:{version}
 		if state, ok := nodeInfo.ImageStates[normalizedImageName(container.Image)]; ok {
 			sum += scaledImageScore(state, totalNumNodes)
 		}
@@ -109,6 +118,12 @@ func sumImageScores(nodeInfo *framework.NodeInfo, containers []v1.Container, tot
 // This heuristic aims to mitigate the undesirable "node heating problem", i.e., pods get assigned to the same or
 // a few nodes due to image locality.
 func scaledImageScore(imageState *framework.ImageStateSummary, totalNumNodes int) int64 {
+	/*
+		100 nodes
+			10 image nodes
+		( 10 / 100 ) * image_size
+		（有镜像的节点数量 / 预选的节点总数）* 镜像大小
+	*/
 	spread := float64(imageState.NumNodes) / float64(totalNumNodes)
 	return int64(float64(imageState.Size) * spread)
 }

@@ -39,6 +39,10 @@ func (pl *PrioritySort) Name() string {
 // Less is the function used by the activeQ heap algorithm to sort pods.
 // It sorts pods based on their priority. When priorities are equal, it uses
 // PodQueueInfo.timestamp.
+/*
+	Less 是一个有用的函数通过 activeQ堆 算法去排序 pods
+	它排序pods是基于他们的优先级，当优先级相等时，它使用进队列的 timestamp 字段比较，时间越早优先级越高
+*/
 func (pl *PrioritySort) Less(pInfo1, pInfo2 *framework.QueuedPodInfo) bool {
 	p1 := corev1helpers.PodPriority(pInfo1.Pod)
 	p2 := corev1helpers.PodPriority(pInfo2.Pod)

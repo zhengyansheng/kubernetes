@@ -741,7 +741,7 @@ func (f *frameworkImpl) RunFilterPlugins(
 	pod *v1.Pod,
 	nodeInfo *framework.NodeInfo,
 ) *framework.Status {
-	// 同步执行所有的filter plugin
+	// 同步执行所有的 filter plugin
 	for _, pl := range f.filterPlugins {
 		if state.SkipFilterPlugins.Has(pl.Name()) {
 			continue

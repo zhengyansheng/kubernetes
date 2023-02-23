@@ -64,7 +64,9 @@ func (pl *NodeName) Filter(ctx context.Context, _ *framework.CycleState, pod *v1
 }
 
 // Fits actually checks if the pod fits the node.
+// Fits 实际上检查pod是否适合节点
 func Fits(pod *v1.Pod, nodeInfo *framework.NodeInfo) bool {
+	// 如果 pod nodeName 是空，或者 pod nodeName 等于这个 node name 就适合
 	return len(pod.Spec.NodeName) == 0 || pod.Spec.NodeName == nodeInfo.Node().Name
 }
 
