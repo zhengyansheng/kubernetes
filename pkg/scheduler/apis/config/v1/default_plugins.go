@@ -28,6 +28,30 @@ import (
 
 // getDefaultPlugins returns the default set of plugins.
 func getDefaultPlugins() *v1.Plugins {
+	/*
+		// MultiPoint is a simplified config section to enable plugins for all valid extension points.
+		// Plugins enabled through MultiPoint will automatically register for every individual extension point the plugin has implemented.
+		// Disabling a plugin through MultiPoint disables that behavior.
+		// The same is true for disabling "*" through MultiPoint (no default plugins will be automatically registered).
+		// Plugins can still be disabled through their individual extension points.
+		//
+		// In terms of precedence, plugin config follows this basic hierarchy
+		//   1. Specific extension points // 特定扩展点
+		//   2. Explicitly configured MultiPoint plugins // 显式配置的MultiPoint插件
+		//   3. The set of default plugins, as MultiPoint plugins // 默认插件集 作为MultiPoint插件
+		// This implies that a higher precedence plugin will run first and overwrite any settings within MultiPoint.
+		// Explicitly user-configured plugins also take a higher precedence over default plugins.
+		// Within this hierarchy, an Enabled setting takes precedence over Disabled. For example, if a plugin is
+		// set in both `multiPoint.Enabled` and `multiPoint.Disabled`, the plugin will be enabled. Similarly,
+		// including `multiPoint.Disabled = '*'` and `multiPoint.Enabled = pluginA` will still register that specific
+		// plugin through MultiPoint. This follows the same behavior as all other extension point configurations.
+		MultiPoint是一个简化的配置部分，用于为所有有效的扩展点启用插件
+		通过MultiPoint启用的插件将自动为插件实现的每个扩展点注册
+		通过MultiPoint禁用插件将禁用该行为
+
+		这意味着优先级较高的插件将首先运行并覆盖MultiPoint中的任何设置
+		显式用户配置的插件也比默认插件具有更高的优先级
+	*/
 	plugins := &v1.Plugins{
 		MultiPoint: v1.PluginSet{
 			Enabled: []v1.Plugin{

@@ -66,8 +66,8 @@ func (pl *ImageLocality) Score(ctx context.Context, state *framework.CycleState,
 	}
 	totalNumNodes := len(nodeInfos)
 
-	// 计算打分
-	// （有镜像的节点数量 / 预选的节点总数）* 镜像大小
+	// 计算分数
+	// sumImageScores: 计算pod中多个容器的镜像大小的和
 	score := calculatePriority(sumImageScores(nodeInfo, pod.Spec.Containers, totalNumNodes), len(pod.Spec.Containers))
 
 	return score, nil
@@ -102,6 +102,7 @@ func calculatePriority(sumScores int64, numContainers int) int64 {
 // sumImageScores returns the sum of image scores of all the containers that are already on the node.
 // Each image receives a raw score of its size, scaled by scaledImageScore. The raw scores are later used to calculate
 // the final score. Note that the init containers are not considered for it's rare for users to deploy huge init containers.
+// 求一个pod中多个容器镜像大小的和
 func sumImageScores(nodeInfo *framework.NodeInfo, containers []v1.Container, totalNumNodes int) int64 {
 	var sum int64
 	for _, container := range containers {
@@ -118,12 +119,6 @@ func sumImageScores(nodeInfo *framework.NodeInfo, containers []v1.Container, tot
 // This heuristic aims to mitigate the undesirable "node heating problem", i.e., pods get assigned to the same or
 // a few nodes due to image locality.
 func scaledImageScore(imageState *framework.ImageStateSummary, totalNumNodes int) int64 {
-	/*
-		100 nodes
-			10 image nodes
-		( 10 / 100 ) * image_size
-		（有镜像的节点数量 / 预选的节点总数）* 镜像大小
-	*/
 	spread := float64(imageState.NumNodes) / float64(totalNumNodes)
 	return int64(float64(imageState.Size) * spread)
 }

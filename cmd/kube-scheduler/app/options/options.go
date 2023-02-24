@@ -21,7 +21,7 @@ import (
 	"net"
 	"os"
 	"time"
-	
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -53,7 +53,7 @@ import (
 type Options struct {
 	// The default values.
 	ComponentConfig *kubeschedulerconfig.KubeSchedulerConfiguration
-	
+
 	SecureServing  *apiserveroptions.SecureServingOptionsWithLoopback
 	Authentication *apiserveroptions.DelegatingAuthenticationOptions
 	Authorization  *apiserveroptions.DelegatingAuthorizationOptions
@@ -61,15 +61,15 @@ type Options struct {
 	Logs           *logs.Options
 	Deprecated     *DeprecatedOptions
 	LeaderElection *componentbaseconfig.LeaderElectionConfiguration
-	
+
 	// ConfigFile is the location of the scheduler server's configuration file.
 	ConfigFile string
-	
+
 	// WriteConfigTo is the path where the default configuration will be written.
 	WriteConfigTo string
-	
+
 	Master string
-	
+
 	// Flags hold the parsed CLI flags.
 	Flags *cliflag.NamedFlagSets
 }
@@ -95,18 +95,18 @@ func NewOptions() *Options {
 		Metrics: metrics.NewOptions(),
 		Logs:    logs.NewOptions(),
 	}
-	
+
 	o.Authentication.TolerateInClusterLookupFailure = true
 	o.Authentication.RemoteKubeConfigFileOptional = true
 	o.Authorization.RemoteKubeConfigFileOptional = true
-	
+
 	// Set the PairName but leave certificate directory blank to generate in-memory by default
 	o.SecureServing.ServerCert.CertDirectory = ""
 	o.SecureServing.ServerCert.PairName = "kube-scheduler"
-	o.SecureServing.BindPort = kubeschedulerconfig.DefaultKubeSchedulerPort
-	
+	o.SecureServing.BindPort = kubeschedulerconfig.DefaultKubeSchedulerPort // 10259
+
 	o.initFlags()
-	
+
 	return o
 }
 
@@ -172,7 +172,7 @@ func (o *Options) ApplyLeaderElectionTo(cfg *kubeschedulerconfig.KubeSchedulerCo
 	if leaderelection.Changed("leader-elect-resource-namespace") {
 		cfg.LeaderElection.ResourceNamespace = o.LeaderElection.ResourceNamespace
 	}
-	
+
 	o.ComponentConfig = cfg
 }
 
@@ -181,13 +181,13 @@ func (o *Options) initFlags() {
 	if o.Flags != nil {
 		return
 	}
-	
+
 	nfs := cliflag.NamedFlagSets{}
 	fs := nfs.FlagSet("misc")
 	fs.StringVar(&o.ConfigFile, "config", o.ConfigFile, "The path to the configuration file.")
 	fs.StringVar(&o.WriteConfigTo, "write-config-to", o.WriteConfigTo, "If set, write the configuration values to this file and exit.")
 	fs.StringVar(&o.Master, "master", o.Master, "The address of the Kubernetes API server (overrides any value in kubeconfig)")
-	
+
 	o.SecureServing.AddFlags(nfs.FlagSet("secure serving"))
 	o.Authentication.AddFlags(nfs.FlagSet("authentication"))
 	o.Authorization.AddFlags(nfs.FlagSet("authorization"))
@@ -196,7 +196,7 @@ func (o *Options) initFlags() {
 	utilfeature.DefaultMutableFeatureGate.AddFlag(nfs.FlagSet("feature gate"))
 	o.Metrics.AddFlags(nfs.FlagSet("metrics"))
 	logsapi.AddFlags(o.Logs, nfs.FlagSet("logs"))
-	
+
 	o.Flags = &nfs
 }
 
@@ -214,14 +214,14 @@ func (o *Options) ApplyTo(c *schedulerappconfig.Config) error {
 		}
 		// If the --config arg is specified, honor the leader election CLI args only.
 		o.ApplyLeaderElectionTo(cfg)
-		
+
 		if err := validation.ValidateKubeSchedulerConfiguration(cfg); err != nil {
 			return err
 		}
-		
+
 		c.ComponentConfig = *cfg
 	}
-	
+
 	// Build kubeconfig first to so that if it fails, it doesn't cause leaking
 	// goroutines (started from initializing secure serving - which underneath
 	// creates a queue which in its constructor starts a goroutine).
@@ -230,7 +230,7 @@ func (o *Options) ApplyTo(c *schedulerappconfig.Config) error {
 		return err
 	}
 	c.KubeConfig = kubeConfig
-	
+
 	if err := o.SecureServing.ApplyTo(&c.SecureServing, &c.LoopbackClientConfig); err != nil {
 		return err
 	}
@@ -243,19 +243,19 @@ func (o *Options) ApplyTo(c *schedulerappconfig.Config) error {
 		}
 	}
 	o.Metrics.Apply()
-	
+
 	// Apply value independently instead of using ApplyDeprecated() because it can't be configured via ComponentConfig.
 	if o.Deprecated != nil {
 		c.PodMaxInUnschedulablePodsDuration = o.Deprecated.PodMaxInUnschedulablePodsDuration
 	}
-	
+
 	return nil
 }
 
 // Validate validates all the required options.
 func (o *Options) Validate() []error {
 	var errs []error
-	
+
 	if err := validation.ValidateKubeSchedulerConfiguration(o.ComponentConfig); err != nil {
 		errs = append(errs, err.Errors()...)
 	}
@@ -263,7 +263,7 @@ func (o *Options) Validate() []error {
 	errs = append(errs, o.Authentication.Validate()...)
 	errs = append(errs, o.Authorization.Validate()...)
 	errs = append(errs, o.Metrics.Validate()...)
-	
+
 	return errs
 }
 
@@ -274,35 +274,38 @@ func (o *Options) Config() (*schedulerappconfig.Config, error) {
 			return nil, fmt.Errorf("error creating self-signed certificates: %v", err)
 		}
 	}
-	
+
 	c := &schedulerappconfig.Config{}
 	if err := o.ApplyTo(c); err != nil {
 		return nil, err
 	}
-	
+
 	// Prepare kube clients.
 	client, eventClient, err := createClients(c.KubeConfig)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	c.EventBroadcaster = events.NewEventBroadcasterAdapter(eventClient)
-	
+
 	// Set up leader election if enabled.
+	// 设置领导人选举（如果启用）
 	var leaderElectionConfig *leaderelection.LeaderElectionConfig
 	if c.ComponentConfig.LeaderElection.LeaderElect {
 		// Use the scheduler name in the first profile to record leader election.
 		schedulerName := corev1.DefaultSchedulerName
 		if len(c.ComponentConfig.Profiles) != 0 {
+			// 如果集群中没有自定义调度器，那么就用默认的，如果有自定义的，就用自定义的调度器
 			schedulerName = c.ComponentConfig.Profiles[0].SchedulerName
 		}
+		// 事件广播
 		coreRecorder := c.EventBroadcaster.DeprecatedNewLegacyRecorder(schedulerName)
 		leaderElectionConfig, err = makeLeaderElectionConfig(c.ComponentConfig.LeaderElection, c.KubeConfig, coreRecorder)
 		if err != nil {
 			return nil, err
 		}
 	}
-	
+
 	// clientSet
 	c.Client = client
 	// informer
@@ -312,7 +315,7 @@ func (o *Options) Config() (*schedulerappconfig.Config, error) {
 	// dynamicInformer
 	c.DynInformerFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 0, corev1.NamespaceAll, nil)
 	c.LeaderElection = leaderElectionConfig
-	
+
 	return c, nil
 }
 
@@ -325,7 +328,7 @@ func makeLeaderElectionConfig(config componentbaseconfig.LeaderElectionConfigura
 	}
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
 	id := hostname + "_" + string(uuid.NewUUID())
-	
+
 	rl, err := resourcelock.NewFromKubeconfig(config.ResourceLock,
 		config.ResourceNamespace,
 		config.ResourceName,
@@ -338,7 +341,7 @@ func makeLeaderElectionConfig(config componentbaseconfig.LeaderElectionConfigura
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
 	}
-	
+
 	return &leaderelection.LeaderElectionConfig{
 		Lock:            rl,
 		LeaseDuration:   config.LeaseDuration.Duration,
@@ -357,13 +360,13 @@ func createKubeConfig(config componentbaseconfig.ClientConnectionConfiguration, 
 	if err != nil {
 		return nil, err
 	}
-	
+
 	kubeConfig.DisableCompression = true
 	kubeConfig.AcceptContentTypes = config.AcceptContentTypes
 	kubeConfig.ContentType = config.ContentType
 	kubeConfig.QPS = config.QPS
 	kubeConfig.Burst = int(config.Burst)
-	
+
 	return kubeConfig, nil
 }
 
@@ -373,11 +376,11 @@ func createClients(kubeConfig *restclient.Config) (clientset.Interface, clientse
 	if err != nil {
 		return nil, nil, err
 	}
-	
+
 	eventClient, err := clientset.NewForConfig(kubeConfig)
 	if err != nil {
 		return nil, nil, err
 	}
-	
+
 	return client, eventClient, nil
 }

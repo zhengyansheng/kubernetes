@@ -317,6 +317,10 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		return nil, nil, utilerrors.NewAggregate(errs)
 	}
 
+	/*
+		opts.Config()
+		- see scheduleName -> "default-scheduler"
+	*/
 	c, err := opts.Config()
 	if err != nil {
 		return nil, nil, err
@@ -354,6 +358,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		scheduler.WithParallelism(cc.ComponentConfig.Parallelism),
 		scheduler.WithBuildFrameworkCapturer(func(profile kubeschedulerconfig.KubeSchedulerProfile) {
 			// Profiles are processed during Framework instantiation to set default plugins and configurations. Capturing them for logging
+			// 在框架实例化期间处理配置文件以设置默认插件和配置
 			completedProfiles = append(completedProfiles, profile)
 		}),
 	)

@@ -31,6 +31,9 @@ var (
 	// pluginArgConversionScheme is a scheme with internal and v1 registered,
 	// used for defaulting/converting typed PluginConfig Args.
 	// Access via getPluginArgConversionScheme()
+	// pluginArgConversionScheme: 是注册了内部和v1的方案
+	// 用于默认/转换类型化的PluginConfig参数
+	// 访问 getPluginArgConversionScheme()
 	pluginArgConversionScheme     *runtime.Scheme
 	initPluginArgConversionScheme sync.Once
 )

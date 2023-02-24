@@ -64,6 +64,7 @@ func (pl *NodeUnschedulable) Filter(ctx context.Context, _ *framework.CycleState
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonUnknownCondition)
 	}
 	// If pod tolerate unschedulable taint, it's also tolerate `node.Spec.Unschedulable`.
+	// 如果pod能容忍不可调度的污点，它也能容忍 `node.Spec.Unschedulable`
 	podToleratesUnschedulable := v1helper.TolerationsTolerateTaint(pod.Spec.Tolerations, &v1.Taint{
 		Key:    v1.TaintNodeUnschedulable,
 		Effect: v1.TaintEffectNoSchedule,

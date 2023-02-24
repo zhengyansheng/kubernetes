@@ -34,6 +34,7 @@ type DeprecatedOptions struct {
 	// unschedulablePods. If a pod stays in unschedulablePods for longer than this
 	// value, the pod will be moved from unschedulablePods to backoffQ or activeQ.
 	// If this value is empty, the default value (5min) will be used.
+	// 超过5分钟，将从 unschedulablePods 移动到 backoffQ or activeQ
 	PodMaxInUnschedulablePodsDuration time.Duration
 }
 
