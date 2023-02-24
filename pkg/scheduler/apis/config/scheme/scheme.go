@@ -28,6 +28,7 @@ import (
 
 var (
 	// Scheme is the runtime.Scheme to which all kubescheduler api types are registered.
+	// Scheme是 runtime.Scheme。Scheme是所有 kubescheduler api类型注册到的方案
 	Scheme = runtime.NewScheme()
 
 	// Codecs provides access to encoding and decoding for the scheme.

@@ -29,10 +29,15 @@ import (
 // RegisterDefaults adds defaulters functions to the given scheme.
 // Public to allow building arbitrary schemes.
 // All generated defaulters are covering - they call all nested defaulters.
+/*
+	公开去允许构建任意的schemes
+	所有生成的默认值都包含 -
+ */
 func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&v1beta2.DefaultPreemptionArgs{}, func(obj interface{}) { SetObjectDefaults_DefaultPreemptionArgs(obj.(*v1beta2.DefaultPreemptionArgs)) })
 	scheme.AddTypeDefaultingFunc(&v1beta2.InterPodAffinityArgs{}, func(obj interface{}) { SetObjectDefaults_InterPodAffinityArgs(obj.(*v1beta2.InterPodAffinityArgs)) })
 	scheme.AddTypeDefaultingFunc(&v1beta2.KubeSchedulerConfiguration{}, func(obj interface{}) {
+		// 注册默认值
 		SetObjectDefaults_KubeSchedulerConfiguration(obj.(*v1beta2.KubeSchedulerConfiguration))
 	})
 	scheme.AddTypeDefaultingFunc(&v1beta2.NodeResourcesBalancedAllocationArgs{}, func(obj interface{}) {
@@ -52,6 +57,7 @@ func SetObjectDefaults_InterPodAffinityArgs(in *v1beta2.InterPodAffinityArgs) {
 	SetDefaults_InterPodAffinityArgs(in)
 }
 
+// 设置 kube scheduler configuration 默认值
 func SetObjectDefaults_KubeSchedulerConfiguration(in *v1beta2.KubeSchedulerConfiguration) {
 	SetDefaults_KubeSchedulerConfiguration(in)
 }

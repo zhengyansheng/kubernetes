@@ -21,7 +21,7 @@ import (
 )
 
 // GroupName is the group name used in this package
-const GroupName = v1beta2.GroupName
+const GroupName = v1beta2.GroupName // kubescheduler.config.k8s.io
 
 // SchemeGroupVersion is group version used to register these objects
 var SchemeGroupVersion = v1beta2.SchemeGroupVersion
@@ -29,6 +29,8 @@ var SchemeGroupVersion = v1beta2.SchemeGroupVersion
 var (
 	// localSchemeBuilder extends the SchemeBuilder instance with the external types. In this package,
 	// defaulting and conversion init funcs are registered as well.
+	// localSchemeBuilder 使用外部类型扩展 SchemeBuilder 实例。在此包中
+	// 默认和转换init funcs也已注册
 	localSchemeBuilder = &v1beta2.SchemeBuilder
 	// AddToScheme is a global function that registers this API group & version to a scheme
 	AddToScheme = localSchemeBuilder.AddToScheme
