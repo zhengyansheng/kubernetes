@@ -240,6 +240,9 @@ func (sched *Scheduler) deletePodFromCache(obj interface{}) {
 
 // assignedPod selects pods that are assigned (scheduled and running).
 func assignedPod(pod *v1.Pod) bool {
+	if len(pod.Spec.NodeName) != 0 {
+		klog.V(3).Infof("分配 pod 到 node， node name: %v", pod.Spec.NodeName)
+	}
 	return len(pod.Spec.NodeName) != 0
 }
 
@@ -258,11 +261,12 @@ func addAllEventHandlers(
 ) {
 	// scheduled pod cache
 	informerFactory.Core().V1().Pods().Informer().AddEventHandler(
+		// FilteringResourceEventHandler 过滤所有的事件资源，如果返回true，则调用对应的Handler，否则退出
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
 				switch t := obj.(type) {
 				case *v1.Pod:
-					// 判断 nodeName 字段是否为空
+					// 分配 pod
 					return assignedPod(t)
 				case cache.DeletedFinalStateUnknown:
 					if _, ok := t.Obj.(*v1.Pod); ok {
@@ -278,11 +282,11 @@ func addAllEventHandlers(
 				}
 			},
 			Handler: cache.ResourceEventHandlerFuncs{
-				// add pod
+				// 添加 pod
 				AddFunc: sched.addPodToCache,
-				// update pod
+				// 修改 pod
 				UpdateFunc: sched.updatePodInCache,
-				// delete pod
+				// 删除 pod
 				DeleteFunc: sched.deletePodFromCache,
 			},
 		},

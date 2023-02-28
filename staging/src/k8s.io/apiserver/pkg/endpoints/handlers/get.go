@@ -252,9 +252,13 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope *RequestScope, forceWatc
 				timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
 			}
 			if timeout == 0 && minRequestTimeout > 0 {
+				// minRequestTimeout: 1800
+				// 1800 * [1, 2.0) 最小 30分钟，最大不超过1个小时
 				timeout = time.Duration(float64(minRequestTimeout) * (rand.Float64() + 1.0))
 			}
 			klog.V(3).InfoS("Starting watch", "path", req.URL.Path, "resourceVersion", opts.ResourceVersion, "labels", opts.LabelSelector, "fields", opts.FieldSelector, "timeout", timeout)
+
+			// 设置超时，如果watch etcd超时则终止
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			watcher, err := rw.Watch(ctx, &opts)
@@ -262,6 +266,7 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope *RequestScope, forceWatc
 				scope.err(err, w, req)
 				return
 			}
+			// metric 忽略
 			requestInfo, _ := request.RequestInfoFrom(ctx)
 			metrics.RecordLongRunning(req, requestInfo, metrics.APIServerComponent, func() {
 				serveWatch(watcher, scope, outputMediaType, req, w, timeout)

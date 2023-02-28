@@ -618,6 +618,7 @@ func (f *frameworkImpl) RunPreFilterPlugins(ctx context.Context, state *framewor
 	var pluginsWithNodes []string
 	skipPlugins := sets.New[string]()
 	for _, pl := range f.preFilterPlugins {
+		klog.V(3).Infof("pre filter plugin name: %v\n", pl.Name())
 		r, s := f.runPreFilterPlugin(ctx, pl, state, pod)
 		// 跳过插件
 		if s.IsSkip() {
@@ -743,6 +744,7 @@ func (f *frameworkImpl) RunFilterPlugins(
 ) *framework.Status {
 	// 同步执行所有的 filter plugin
 	for _, pl := range f.filterPlugins {
+		klog.V(3).Infof("run filter plugin name: %v\n", pl.Name())
 		if state.SkipFilterPlugins.Has(pl.Name()) {
 			continue
 		}

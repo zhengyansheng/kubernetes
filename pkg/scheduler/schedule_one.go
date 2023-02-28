@@ -786,8 +786,10 @@ func selectHost(nodeScores []framework.NodePluginScores) (string, error) {
 	// 从列表中求一个最大值，如果分数相等则随机替换最大值
 	maxScore := nodeScores[0].TotalScore
 	selected := nodeScores[0].Name
+	klog.V(3).Infof("run score plugin, name:%s, score: %+v, total score: %v\n", selected, nodeScores[0].Scores, maxScore)
 	cntOfMaxScore := 1
 	for _, ns := range nodeScores[1:] {
+		klog.V(3).Infof("run score plugin, name:%s, score: %+v, total score: %v\n", ns.Name, ns.Scores, ns.TotalScore)
 		if ns.TotalScore > maxScore {
 			maxScore = ns.TotalScore
 			selected = ns.Name

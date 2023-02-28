@@ -161,15 +161,19 @@ type WatchServer struct {
 
 // ServeHTTP serves a series of encoded events via HTTP with Transfer-Encoding: chunked
 // or over a websocket connection.
+// ServeHTTP: 通过HTTP提供一系列编码事件携带 Transfer-Encoding: chunked 或者 通过 websocket 连接
 func (s *WatchServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	kind := s.Scope.Kind
 
+	// http 分块传输 还是 websocket
 	if wsstream.IsWebSocketRequest(req) {
+		// Upgrade
 		w.Header().Set("Content-Type", s.MediaType)
 		websocket.Handler(s.HandleWS).ServeHTTP(w, req)
 		return
 	}
 
+	// 反射 http.ResponseWrite
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		err := fmt.Errorf("unable to start watch - can't get http.Flusher: %#v", w)
@@ -199,6 +203,7 @@ func (s *WatchServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// ensure the connection times out
+	// 确保连接超时
 	timeoutCh, cleanup := s.TimeoutFactory.TimeoutCh()
 	defer cleanup()
 
@@ -211,8 +216,8 @@ func (s *WatchServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var unknown runtime.Unknown
 	internalEvent := &metav1.InternalEvent{}
 	outEvent := &metav1.WatchEvent{}
-	buf := &bytes.Buffer{}
-	ch := s.Watching.ResultChan()
+	buf := &bytes.Buffer{}        // 申请内存buffer
+	ch := s.Watching.ResultChan() // 变更事件
 	done := req.Context().Done()
 
 	embeddedEncodeFn := s.EmbeddedEncoder.Encode
@@ -230,9 +235,9 @@ func (s *WatchServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	for {
 		select {
-		case <-done:
+		case <-done: // context 有消息了
 			return
-		case <-timeoutCh:
+		case <-timeoutCh: // 超时了
 			return
 		case event, ok := <-ch:
 			if !ok {
@@ -262,25 +267,30 @@ func (s *WatchServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			*internalEvent = metav1.InternalEvent(event)
 			err := metav1.Convert_v1_InternalEvent_To_v1_WatchEvent(internalEvent, outEvent, nil)
 			if err != nil {
+				// 转换失败时，断开客户端连接
 				utilruntime.HandleError(fmt.Errorf("unable to convert watch object: %v", err))
 				// client disconnect.
 				return
 			}
 			if err := e.Encode(outEvent); err != nil {
+				// 解码失败时，断开客户端连接
 				utilruntime.HandleError(fmt.Errorf("unable to encode watch object %T: %v (%#v)", outEvent, err, e))
 				// client disconnect.
 				return
 			}
+			// 如果 channel 没有数据了，刷新数据到客户端
 			if len(ch) == 0 {
 				flusher.Flush()
 			}
 
+			// 清空 buf
 			buf.Reset()
 		}
 	}
 }
 
 // HandleWS implements a websocket handler.
+// 实现websocket处理程序
 func (s *WatchServer) HandleWS(ws *websocket.Conn) {
 	defer ws.Close()
 	done := make(chan struct{})
