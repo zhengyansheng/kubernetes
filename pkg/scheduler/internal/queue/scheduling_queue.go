@@ -317,7 +317,9 @@ func NewPriorityQueue(
 // Run starts the goroutine to pump from podBackoffQ to activeQ
 // Run: 启动 goroutine，从 podBackoffQ 抽取到 activeQ
 func (p *PriorityQueue) Run() {
+	// 从 BackoffQ 中移动 非 backoff 的 pod 到 ActiveQ，每秒钟一次
 	go wait.Until(p.flushBackoffQCompleted, 1.0*time.Second, p.stop)
+	// 从 UnschedulablePods map 中移动到 BackoffQ 或者 ActiveQ 中，每30秒一次
 	go wait.Until(p.flushUnschedulablePodsLeftover, 30*time.Second, p.stop)
 }
 
@@ -517,6 +519,7 @@ func (p *PriorityQueue) AddUnschedulableIfNotPresent(pInfo *framework.QueuedPodI
 }
 
 // flushBackoffQCompleted Moves all pods from backoffQ which have completed backoff in to activeQ
+// flushBackoffQCompleted: 将所有已完成回退的pods从backoffQ移动到activeQ
 func (p *PriorityQueue) flushBackoffQCompleted() {
 	// 加锁
 	p.lock.Lock()
@@ -524,6 +527,7 @@ func (p *PriorityQueue) flushBackoffQCompleted() {
 
 	activated := false
 	for {
+		// 从 backoffQ 堆 中取出第一个元素, 猜测是为了保证取出的元素是符合预期的，否则还要放入到堆中
 		rawPodInfo := p.podBackoffQ.Peek()
 		if rawPodInfo == nil {
 			break
@@ -533,6 +537,8 @@ func (p *PriorityQueue) flushBackoffQCompleted() {
 		if p.isPodBackingoff(pInfo) {
 			break
 		}
+
+		// 从 backoffQ 堆 中 删除第一个元素
 		_, err := p.podBackoffQ.Pop()
 		if err != nil {
 			klog.ErrorS(err, "Unable to pop pod from backoff queue despite backoff completion", "pod", klog.KObj(pod))
@@ -547,7 +553,7 @@ func (p *PriorityQueue) flushBackoffQCompleted() {
 	}
 
 	if activated {
-		// 唤醒
+		// 唤醒，告诉 wait 们， ActiveQ 中已经有新事件了
 		p.cond.Broadcast()
 	}
 }
@@ -571,6 +577,7 @@ func (p *PriorityQueue) flushUnschedulablePodsLeftover() {
 	}
 
 	if len(podsToMove) > 0 {
+		// 移动所有的 pods 从 UnschedulableQueue 到 ActiveQ
 		p.movePodsToActiveOrBackoffQueue(podsToMove, UnschedulableTimeout)
 	}
 }

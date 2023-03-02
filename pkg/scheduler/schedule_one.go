@@ -217,6 +217,7 @@ func (sched *Scheduler) schedulingCycle(
 	}
 
 	// Run "permit" plugins.
+	// 抢占
 	runPermitStatus := fwk.RunPermitPlugins(ctx, state, assumedPod, scheduleResult.SuggestedHost)
 	if !runPermitStatus.IsWait() && !runPermitStatus.IsSuccess() {
 		// trigger un-reserve to clean up state associated with the reserved Pod

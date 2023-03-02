@@ -352,9 +352,9 @@ func New(client clientset.Interface,
 }
 
 // Run begins watching and scheduling. It starts scheduling and blocked until the context is done.
-// Run: 开始 watch 和 scheduler. 它启动调度并阻塞直到上下文完成
+// Run: 开始 watch 和 scheduler. 它启动 调度 并 阻塞 直到上下文完成
 func (sched *Scheduler) Run(ctx context.Context) {
-	// SchedulingQueue 的生产者，会将 backoffQ 和 unschedulableQ 的 pod 发送到 activeQ
+	// SchedulingQueue: 生产者，会将 backoffQ 和 unschedulableQ 的 pod 发送到 activeQ
 	sched.SchedulingQueue.Run()
 
 	// We need to start scheduleOne loop in a dedicated goroutine,
@@ -372,7 +372,7 @@ func (sched *Scheduler) Run(ctx context.Context) {
 
 	// 阻塞
 	<-ctx.Done()
-	// 关闭 Scheduling Queue
+	// 关闭 SchedulingQueue 队列
 	sched.SchedulingQueue.Close()
 }
 
