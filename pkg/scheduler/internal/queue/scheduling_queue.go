@@ -702,8 +702,8 @@ func (p *PriorityQueue) Delete(pod *v1.Pod) error {
 	return nil
 }
 
-// AssignedPodAdded is called when a bound pod is added. Creation of this pod
-// may make pending pods with matching affinity terms schedulable.
+// AssignedPodAdded is called when a bound pod is added.
+// Creation of this pod may make pending pods with matching affinity terms schedulable.
 func (p *PriorityQueue) AssignedPodAdded(pod *v1.Pod) {
 	p.lock.Lock()
 	p.movePodsToActiveOrBackoffQueue(p.getUnschedulablePodsWithMatchingAffinityTerm(pod), AssignedPodAdd)

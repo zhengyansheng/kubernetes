@@ -397,6 +397,7 @@ func (sched *Scheduler) schedulePod(ctx context.Context, fwk framework.Framework
 		return result, err
 	}
 
+	// 3. 选中其一
 	host, err := selectHost(priorityList)
 	trace.Step("Prioritizing done")
 
@@ -410,12 +411,13 @@ func (sched *Scheduler) schedulePod(ctx context.Context, fwk framework.Framework
 // Filters the nodes to find the ones that fit the pod based on the framework
 // filter plugins and filter extenders.
 func (sched *Scheduler) findNodesThatFitPod(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *v1.Pod) ([]*v1.Node, framework.Diagnosis, error) {
+	// diagnosis 诊断
 	diagnosis := framework.Diagnosis{
-		NodeToStatusMap:      make(framework.NodeToStatusMap),
-		UnschedulablePlugins: sets.NewString(),
+		NodeToStatusMap:      make(framework.NodeToStatusMap), // node的状态
+		UnschedulablePlugins: sets.NewString(),                // unschedulable 插件数组
 	}
 
-	// 快照
+	// 快照，从快照中拿到所有的node
 	allNodes, err := sched.nodeInfoSnapshot.NodeInfos().List()
 	if err != nil {
 		return nil, diagnosis, err
@@ -461,9 +463,11 @@ func (sched *Scheduler) findNodesThatFitPod(ctx context.Context, fwk framework.F
 			nodes = append(nodes, nInfo)
 		}
 	}
+	// feasibleNodes: 可行的nodes
 	feasibleNodes, err := sched.findNodesThatPassFilters(ctx, fwk, state, pod, diagnosis, nodes)
 	// always try to update the sched.nextStartNodeIndex regardless of whether an error has occurred
 	// this is helpful to make sure that all the nodes have a chance to be searched
+	// 无论是否发生错误，始终尝试更新sched.nexStartNodeIndex 这有助于确保所有节点都有机会被搜索
 	processedNodes := len(feasibleNodes) + len(diagnosis.NodeToStatusMap)
 	sched.nextStartNodeIndex = (sched.nextStartNodeIndex + processedNodes) % len(nodes)
 	if err != nil {
@@ -474,6 +478,7 @@ func (sched *Scheduler) findNodesThatFitPod(ctx context.Context, fwk framework.F
 	if err != nil {
 		return nil, diagnosis, err
 	}
+	// feasibleNodes: 返回过滤成功的node
 	return feasibleNodes, diagnosis, nil
 }
 
@@ -505,7 +510,10 @@ func (sched *Scheduler) findNodesThatPassFilters(
 	pod *v1.Pod,
 	diagnosis framework.Diagnosis,
 	nodes []*framework.NodeInfo) ([]*v1.Node, error) {
+
+	// 快照中所有node的数量
 	numAllNodes := len(nodes)
+	// numFeasibleNodesToFind: 过滤一部分nodes
 	numNodesToFind := sched.numFeasibleNodesToFind(fwk.PercentageOfNodesToScore(), int32(numAllNodes))
 
 	// Create feasible list with enough space to avoid growing it
@@ -572,20 +580,30 @@ func (sched *Scheduler) findNodesThatPassFilters(
 // numFeasibleNodesToFind returns the number of feasible nodes that once found, the scheduler stops
 // its search for more feasible nodes.
 func (sched *Scheduler) numFeasibleNodesToFind(percentageOfNodesToScore *int32, numAllNodes int32) (numNodes int32) {
+	/*
+		如果集群的节点个数小于100，那么参与调度的节点个数就是当下集群的节点个数
+		如果集群节点个数大于100，那么参与调度的节点个数的计算公式没
+		前提 percentageOfNodesToScore ==0 -> 2000 * ( 50 - 2000 / 125 ) / 100
+	*/
+	// minFeasibleNodesPercentageToFind = 100
+	// 如果集群节点数小于100，默认 filter 就按照当前集群的个数来过滤
 	if numAllNodes < minFeasibleNodesToFind {
 		return numAllNodes
 	}
 
+	// 集群节点数大于100
 	// Use profile percentageOfNodesToScore if it's set. Otherwise, use global percentageOfNodesToScore.
 	var percentage int32
 	if percentageOfNodesToScore != nil {
 		percentage = *percentageOfNodesToScore
 	} else {
-		percentage = sched.percentageOfNodesToScore
+		percentage = sched.percentageOfNodesToScore // == 0
 	}
+	klog.V(3).Infof("percentage of nodes to score, percentage: %v\n", percentage)
 
 	if percentage == 0 {
-		percentage = int32(50) - numAllNodes/125
+		percentage = int32(50) - numAllNodes/125 // 肯定小于50
+		// minFeasibleNodesPercentageToFind = 5
 		if percentage < minFeasibleNodesPercentageToFind {
 			percentage = minFeasibleNodesPercentageToFind
 		}

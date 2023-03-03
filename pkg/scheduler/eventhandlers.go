@@ -69,6 +69,7 @@ func (sched *Scheduler) addNodeToCache(obj interface{}) {
 
 	nodeInfo := sched.Cache.AddNode(node)
 	klog.V(3).InfoS("Add event for node", "node", klog.KObj(node))
+	// 有新的Node添加，所有不可调度的Pod都有可能可以被调度了
 	sched.SchedulingQueue.MoveAllToActiveOrBackoffQueue(queue.NodeAdd, preCheckForNode(nodeInfo))
 }
 
@@ -142,12 +143,13 @@ func (sched *Scheduler) updatePodInSchedulingQueue(oldObj, newObj interface{}) {
 	}
 }
 
+// 从 scheduleQueue 队列中删除 pod
 func (sched *Scheduler) deletePodFromSchedulingQueue(obj interface{}) {
 	var pod *v1.Pod
 	switch t := obj.(type) {
-	case *v1.Pod:
+	case *v1.Pod: // running 的 pod
 		pod = obj.(*v1.Pod)
-	case cache.DeletedFinalStateUnknown:
+	case cache.DeletedFinalStateUnknown: // 被删除的 Pod
 		var ok bool
 		pod, ok = t.Obj.(*v1.Pod)
 		if !ok {
@@ -162,6 +164,7 @@ func (sched *Scheduler) deletePodFromSchedulingQueue(obj interface{}) {
 	if err := sched.SchedulingQueue.Delete(pod); err != nil {
 		utilruntime.HandleError(fmt.Errorf("unable to dequeue %T: %v", obj, err))
 	}
+	// 根据 nodeName 获取 调度器
 	fwk, err := sched.frameworkForPod(pod)
 	if err != nil {
 		// This shouldn't happen, because we only accept for scheduling the pods
@@ -169,15 +172,18 @@ func (sched *Scheduler) deletePodFromSchedulingQueue(obj interface{}) {
 		klog.ErrorS(err, "Unable to get profile", "pod", klog.KObj(pod))
 		return
 	}
-	// If a waiting pod is rejected, it indicates it's previously assumed and we're
-	// removing it from the scheduler cache. In this case, signal a AssignedPodDelete
-	// event to immediately retry some unscheduled Pods.
+	// If a waiting pod is rejected,
+	// it indicates it's previously assumed and we're removing it from the scheduler cache.
+	// In this case, signal a AssignedPodDelete event to immediately retry some unscheduled Pods.
+	// 如果pod在 WaitingPod 中 则拒绝加入到 调度队列中
 	if fwk.RejectWaitingPod(pod.UID) {
 		sched.SchedulingQueue.MoveAllToActiveOrBackoffQueue(queue.AssignedPodDelete, nil)
 	}
 }
 
+// addPodToCache 处理 add 事件
 func (sched *Scheduler) addPodToCache(obj interface{}) {
+	// 反射
 	pod, ok := obj.(*v1.Pod)
 	if !ok {
 		klog.ErrorS(nil, "Cannot convert to *v1.Pod", "obj", obj)
@@ -190,10 +196,11 @@ func (sched *Scheduler) addPodToCache(obj interface{}) {
 		klog.ErrorS(err, "Scheduler cache AddPod failed", "pod", klog.KObj(pod))
 	}
 
-	// 添加 pod 到 PriorityQueue 队列中
+	// 并不是向调度队列添加 Pod，而是触发调度队列更新可能依赖于此Pod的其他Pod的调度状态。
 	sched.SchedulingQueue.AssignedPodAdded(pod)
 }
 
+// updatePodInCache 处理 update 事件
 func (sched *Scheduler) updatePodInCache(oldObj, newObj interface{}) {
 	oldPod, ok := oldObj.(*v1.Pod)
 	if !ok {
@@ -214,6 +221,7 @@ func (sched *Scheduler) updatePodInCache(oldObj, newObj interface{}) {
 	sched.SchedulingQueue.AssignedPodUpdated(newPod)
 }
 
+// deletePodFromCache 处理 delete 事件
 func (sched *Scheduler) deletePodFromCache(obj interface{}) {
 	var pod *v1.Pod
 	switch t := obj.(type) {
@@ -235,6 +243,7 @@ func (sched *Scheduler) deletePodFromCache(obj interface{}) {
 		klog.ErrorS(err, "Scheduler cache RemovePod failed", "pod", klog.KObj(pod))
 	}
 
+	// 对于Deleted事件则是更新所有不可调度的Pod的调度状态
 	sched.SchedulingQueue.MoveAllToActiveOrBackoffQueue(queue.AssignedPodDelete, nil)
 }
 
@@ -299,7 +308,7 @@ func addAllEventHandlers(
 			FilterFunc: func(obj interface{}) bool {
 				switch t := obj.(type) {
 				case *v1.Pod:
-					// 过滤 len(pod.Spec.NodeName) != 0 and pod.Spec.SchedulerName 存在 default-scheduler
+					// filter len(pod.Spec.NodeName) != 0 and pod.Spec.SchedulerName 存在 default-scheduler
 					return !assignedPod(t) && responsibleForPod(t, sched.Profiles)
 				case cache.DeletedFinalStateUnknown:
 					if pod, ok := t.Obj.(*v1.Pod); ok {
@@ -323,7 +332,7 @@ func addAllEventHandlers(
 	)
 
 	// Nodes cache
-	// 注册 node 事件处理函数
+	// 注册 node 事件处理函数，这里不需要过滤
 	informerFactory.Core().V1().Nodes().Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    sched.addNodeToCache,

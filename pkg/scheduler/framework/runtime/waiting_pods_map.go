@@ -150,8 +150,11 @@ func (w *waitingPod) Allow(pluginName string) {
 
 // Reject declares the waiting pod unschedulable.
 func (w *waitingPod) Reject(pluginName, msg string) {
+	// 加锁
 	w.mu.RLock()
 	defer w.mu.RUnlock()
+
+	//
 	for _, timer := range w.pendingPlugins {
 		timer.Stop()
 	}

@@ -128,11 +128,13 @@ type Option func(*schedulerOptions)
 // ScheduleResult represents the result of scheduling a pod.
 type ScheduleResult struct {
 	// Name of the selected node.
+	// 选中的 node
 	SuggestedHost string
-	// The number of nodes the scheduler evaluated the pod against in the filtering
-	// phase and beyond.
+	// The number of nodes the scheduler evaluated the pod against in the filtering phase and beyond.
+	// 调度过程中评估的Node数量
 	EvaluatedNodes int
 	// The number of nodes out of the evaluated ones that fit the pod.
+	// 评估的节点中符合pod的节点个数
 	FeasibleNodes int
 	// The nominating info for scheduling cycle.
 	nominatingInfo *framework.NominatingInfo

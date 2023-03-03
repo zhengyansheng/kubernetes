@@ -216,6 +216,8 @@ const (
 	// DefaultPercentageOfNodesToScore defines the percentage of nodes of all nodes
 	// that once found feasible, the scheduler stops looking for more nodes.
 	// A value of 0 means adaptive, meaning the scheduler figures out a proper default.
+	// DefaultPercentageOfNodesToScore: 定义所有节点的节点百分比 一旦发现可行，调度器就停止寻找更多节点
+	// 值为0表示自适应，这意味着调度器计算出正确的默认值
 	DefaultPercentageOfNodesToScore = 0
 
 	// MaxCustomPriorityScore is the max score UtilizationShapePoint expects.
