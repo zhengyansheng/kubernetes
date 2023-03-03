@@ -74,7 +74,8 @@ type frameworkImpl struct {
 	// 注册表，保存了所有的插件
 	registry             Registry
 	snapshotSharedLister framework.SharedLister
-	waitingPods          *waitingPodsMap
+	// 等待 pods
+	waitingPods *waitingPodsMap
 	// 插件名称和权重的映射
 	scorePluginWeight map[string]int
 

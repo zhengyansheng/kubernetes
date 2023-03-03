@@ -251,8 +251,8 @@ func responsibleForPod(pod *v1.Pod, profiles profile.Map) bool {
 	return profiles.HandlesSchedulerName(pod.Spec.SchedulerName)
 }
 
-// addAllEventHandlers is a helper function used in tests and in Scheduler
-// to add event handlers for various informers.
+// addAllEventHandlers is a helper function used in tests and in Scheduler to add event handlers for various informers.
+// addAllEventHandlers: 在 测试 和 调度 中是一个帮助函数为 informer 去添加事件处理函数
 func addAllEventHandlers(
 	sched *Scheduler,
 	informerFactory informers.SharedInformerFactory,
@@ -260,13 +260,14 @@ func addAllEventHandlers(
 	gvkMap map[framework.GVK]framework.ActionType,
 ) {
 	// scheduled pod cache
+	// 注册已调度Pod事件处理函数
 	informerFactory.Core().V1().Pods().Informer().AddEventHandler(
 		// FilteringResourceEventHandler 过滤所有的事件资源，如果返回true，则调用对应的Handler，否则退出
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
 				switch t := obj.(type) {
 				case *v1.Pod:
-					// 分配 pod
+					// 如果对象是Pod，只有已调度的Pod才会通过过滤条件，assignedPod()函数判断len(pod.Spec.NodeName) != 0。
 					return assignedPod(t)
 				case cache.DeletedFinalStateUnknown:
 					if _, ok := t.Obj.(*v1.Pod); ok {
@@ -292,12 +293,13 @@ func addAllEventHandlers(
 		},
 	)
 	// unscheduled pod queue
+	// 注册未调度Pod事件处理函数
 	informerFactory.Core().V1().Pods().Informer().AddEventHandler(
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
 				switch t := obj.(type) {
 				case *v1.Pod:
-					// 指定了 nodeName
+					// 过滤 len(pod.Spec.NodeName) != 0 and pod.Spec.SchedulerName 存在 default-scheduler
 					return !assignedPod(t) && responsibleForPod(t, sched.Profiles)
 				case cache.DeletedFinalStateUnknown:
 					if pod, ok := t.Obj.(*v1.Pod); ok {
@@ -321,6 +323,7 @@ func addAllEventHandlers(
 	)
 
 	// Nodes cache
+	// 注册 node 事件处理函数
 	informerFactory.Core().V1().Nodes().Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    sched.addNodeToCache,
@@ -329,6 +332,8 @@ func addAllEventHandlers(
 		},
 	)
 
+	// buildEvtResHandler: 仅是定义匿名函数
+	// 移动 unschedulablePod 到 backoffQ 或 activeQ 队列中
 	buildEvtResHandler := func(at framework.ActionType, gvk framework.GVK, shortGVK string) cache.ResourceEventHandlerFuncs {
 		funcs := cache.ResourceEventHandlerFuncs{}
 		if at&framework.Add != 0 {
@@ -352,6 +357,7 @@ func addAllEventHandlers(
 		return funcs
 	}
 
+	// 注册 CSI,PV,PVC ... 调用 👆 定义的函数
 	for gvk, at := range gvkMap {
 		switch gvk {
 		case framework.Node, framework.Pod:
