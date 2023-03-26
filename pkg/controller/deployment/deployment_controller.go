@@ -95,6 +95,7 @@ type DeploymentController struct {
 	podListerSynced cache.InformerSynced
 
 	// Deployments that need to be synced
+	// RateLimiting 限速队列
 	queue workqueue.RateLimitingInterface
 }
 
@@ -106,7 +107,8 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		client:           client,
 		eventBroadcaster: eventBroadcaster,
 		eventRecorder:    eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "deployment-controller"}),
-		queue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "deployment"),
+		// queue -> 限速队列
+		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "deployment"),
 	}
 	dc.rsControl = controller.RealRSControl{
 		KubeClient: client,
@@ -130,8 +132,8 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		DeleteFunc: dc.deletePod,
 	})
 
-	dc.syncHandler = dc.syncDeployment // 同步deployment func
-	dc.enqueueDeployment = dc.enqueue  // 排队
+	dc.syncHandler = dc.syncDeployment // 同步 deployment func
+	dc.enqueueDeployment = dc.enqueue  // 入队
 
 	dc.dLister = dInformer.Lister()
 	dc.rsLister = rsInformer.Lister()
@@ -347,6 +349,7 @@ func (dc *DeploymentController) deleteReplicaSet(obj interface{}) {
 
 // deletePod will enqueue a Recreate Deployment once all of its pods have stopped running.
 func (dc *DeploymentController) deletePod(obj interface{}) {
+	// 对象断言
 	pod, ok := obj.(*v1.Pod)
 
 	// When a delete is dropped, the relist will notice a pod in the store not
@@ -368,31 +371,39 @@ func (dc *DeploymentController) deletePod(obj interface{}) {
 	klog.V(4).InfoS("Pod deleted", "pod", klog.KObj(pod))
 	if d := dc.getDeploymentForPod(pod); d != nil && d.Spec.Strategy.Type == apps.RecreateDeploymentStrategyType {
 		// Sync if this Deployment now has no more Pods.
+		// 通过 deployment 找到 rs
 		rsList, err := util.ListReplicaSets(d, util.RsListFromClient(dc.client.AppsV1()))
 		if err != nil {
 			return
 		}
+		// 通过 deployment 和 rs 得到 pods
+		// podMap -> map[types.UID][]*v1.Pod
 		podMap, err := dc.getPodMapForDeployment(d, rsList)
 		if err != nil {
 			return
 		}
+		// 计算 pod 数量
 		numPods := 0
 		for _, podList := range podMap {
 			numPods += len(podList)
 		}
 		if numPods == 0 {
+			// 没有pods则开始同步
 			dc.enqueueDeployment(d)
 		}
 	}
 }
 
+// 入队
 func (dc *DeploymentController) enqueue(deployment *apps.Deployment) {
+	// deployment -> key (namespace/name)
 	key, err := controller.KeyFunc(deployment)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", deployment, err))
 		return
 	}
 
+	// key -> queue
 	dc.queue.Add(key)
 }
 
@@ -422,6 +433,7 @@ func (dc *DeploymentController) getDeploymentForPod(pod *v1.Pod) *apps.Deploymen
 	// Find the owning replica set
 	var rs *apps.ReplicaSet
 	var err error
+	// 查找pod父类
 	controllerRef := metav1.GetControllerOf(pod)
 	if controllerRef == nil {
 		// No controller owns this Pod.
@@ -438,10 +450,12 @@ func (dc *DeploymentController) getDeploymentForPod(pod *v1.Pod) *apps.Deploymen
 	}
 
 	// Now find the Deployment that owns that ReplicaSet.
+	// 查找 replicas 父类
 	controllerRef = metav1.GetControllerOf(rs)
 	if controllerRef == nil {
 		return nil
 	}
+	// 通过 res 解析到与之关联到 deployment
 	return dc.resolveControllerRef(rs.Namespace, controllerRef)
 }
 
@@ -667,8 +681,10 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 
 	switch d.Spec.Strategy.Type {
 	case apps.RecreateDeploymentStrategyType:
+		// 重新创建
 		return dc.rolloutRecreate(ctx, d, rsList, podMap)
 	case apps.RollingUpdateDeploymentStrategyType:
+		// 滚动更新
 		return dc.rolloutRolling(ctx, d, rsList)
 	}
 	return fmt.Errorf("unexpected deployment strategy type: %s", d.Spec.Strategy.Type)

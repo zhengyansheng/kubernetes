@@ -233,31 +233,38 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 		if err != nil {
 			klog.Fatalf("error building controller context: %v", err)
 		}
+		// 初始化 controller
 		controllerInitializers := initializersFunc(controllerContext.LoopMode)
+		// 启动 所有 controllers
 		if err := StartControllers(ctx, controllerContext, startSATokenController, controllerInitializers, unsecuredMux, healthzHandler); err != nil {
 			klog.Fatalf("error starting controllers: %v", err)
 		}
 
+		// 启动 informer factory
 		controllerContext.InformerFactory.Start(stopCh)
 		controllerContext.ObjectOrMetadataInformerFactory.Start(stopCh)
+		// informer 初始化完成后，关闭 channel
 		close(controllerContext.InformersStarted)
 
 		<-ctx.Done()
 	}
 
 	// No leader election, run directly
+	// 没有领导人选举，直接参选
 	if !c.ComponentConfig.Generic.LeaderElection.LeaderElect {
 		ctx, _ := wait.ContextForChannel(stopCh)
 		run(ctx, saTokenControllerInitFunc, NewControllerInitializers)
 		return nil
 	}
 
+	// 主机名
 	id, err := os.Hostname()
 	if err != nil {
 		return err
 	}
 
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
+	// 保证唯一性
 	id = id + "_" + string(uuid.NewUUID())
 
 	// leaderMigrator will be non-nil if and only if Leader Migration is enabled.
@@ -362,8 +369,10 @@ type ControllerContext struct {
 	Cloud cloudprovider.Interface
 
 	// Control for which control loops to be run
+	// IncludeCloudLoops 用于运行所有循环的 kube-controller-manager
 	// IncludeCloudLoops is for a kube-controller-manager running all loops
 	// ExternalLoops is for a kube-controller-manager running with a cloud-controller-manager
+	// ExternalLoops 用于运行所有循环的 cloud-controller-manager
 	LoopMode ControllerLoopMode
 
 	// InformersStarted is closed after all of the controllers have been initialized and are running.  After this point it is safe,
@@ -426,10 +435,12 @@ const (
 
 // NewControllerInitializers is a public map of named controller groups (you can start more than one in an init func)
 // paired to their InitFunc.  This allows for structured downstream composition and subdivision.
+// 初始化 控制器名称 和 启动控制器函数的对应关系
 func NewControllerInitializers(loopMode ControllerLoopMode) map[string]InitFunc {
 	controllers := map[string]InitFunc{}
 
 	// All of the controllers must have unique names, or else we will explode.
+	// 所有控制器都必须有唯一的名称，否则 panic
 	register := func(name string, fn InitFunc) {
 		if _, found := controllers[name]; found {
 			panic(fmt.Sprintf("controller name %q was registered twice", name))
@@ -437,6 +448,7 @@ func NewControllerInitializers(loopMode ControllerLoopMode) map[string]InitFunc 
 		controllers[name] = fn
 	}
 
+	// 控制器名称 -> 启动对应控制器的函数
 	register("endpoint", startEndpointController)
 	register("endpointslice", startEndpointSliceController)
 	register("endpointslicemirroring", startEndpointSliceMirroringController)
@@ -463,9 +475,10 @@ func NewControllerInitializers(loopMode ControllerLoopMode) map[string]InitFunc 
 	register("nodeipam", startNodeIpamController)
 	register("nodelifecycle", startNodeLifecycleController)
 	if loopMode == IncludeCloudLoops {
-		register("service", startServiceController)
-		register("route", startRouteController)
-		register("cloud-node-lifecycle", startCloudNodeLifecycleController)
+		// IncludeCloudLoops 是指依赖于云厂商的控制器
+		register("service", startServiceController)                         // service
+		register("route", startRouteController)                             // routee
+		register("cloud-node-lifecycle", startCloudNodeLifecycleController) // node 生命周期
 		// TODO: volume controller into the IncludeCloudLoops only set.
 	}
 	register("persistentvolume-binder", startPersistentVolumeBinderController)
@@ -592,12 +605,14 @@ func StartControllers(ctx context.Context, controllerCtx ControllerContext, star
 
 	var controllerChecks []healthz.HealthChecker
 
+	// controllers -> map[string]InitFunc
 	for controllerName, initFn := range controllers {
 		if !controllerCtx.IsControllerEnabled(controllerName) {
 			klog.Warningf("%q is disabled", controllerName)
 			continue
 		}
 
+		// 等待
 		time.Sleep(wait.Jitter(controllerCtx.ComponentConfig.Generic.ControllerStartInterval.Duration, ControllerStartJitter))
 
 		klog.V(1).Infof("Starting %q", controllerName)

@@ -54,17 +54,17 @@ const (
 )
 
 type PodGCController struct {
-	kubeClient clientset.Interface
+	kubeClient clientset.Interface // 操作APIServer的客户端
 
-	podLister        corelisters.PodLister
-	podListerSynced  cache.InformerSynced
-	nodeLister       corelisters.NodeLister
-	nodeListerSynced cache.InformerSynced
+	podLister        corelisters.PodLister  // 列出所有的pods
+	podListerSynced  cache.InformerSynced   // pod informer是否同步完成
+	nodeLister       corelisters.NodeLister // 列出所有的nodes
+	nodeListerSynced cache.InformerSynced   // node informer 是否同步完成
 
-	nodeQueue workqueue.DelayingInterface
+	nodeQueue workqueue.DelayingInterface // workqueue 的延迟队列
 
-	terminatedPodThreshold int
-	gcCheckPeriod          time.Duration
+	terminatedPodThreshold int           // pod 终止阈值
+	gcCheckPeriod          time.Duration // gc检查周期
 	quarantineTime         time.Duration
 }
 
@@ -145,6 +145,7 @@ func isPodTerminating(pod *v1.Pod) bool {
 	return pod.ObjectMeta.DeletionTimestamp != nil
 }
 
+// gcTerminating 回收那些 terminal pods
 func (gcc *PodGCController) gcTerminating(ctx context.Context, pods []*v1.Pod) {
 	klog.V(4).Info("GC'ing terminating pods that are on out-of-service nodes")
 	terminatingPods := []*v1.Pod{}
@@ -201,6 +202,7 @@ func (gcc *PodGCController) gcTerminated(ctx context.Context, pods []*v1.Pod) {
 	deleteCount := terminatedPodCount - gcc.terminatedPodThreshold
 
 	if deleteCount <= 0 {
+		// 直接退出
 		return
 	}
 

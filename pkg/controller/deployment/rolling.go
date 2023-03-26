@@ -30,10 +30,16 @@ import (
 
 // rolloutRolling implements the logic for rolling a new replica set.
 func (dc *DeploymentController) rolloutRolling(ctx context.Context, d *apps.Deployment, rsList []*apps.ReplicaSet) error {
+	/*
+		oldRSs: 所有的rs
+		newRS: 当前使用的rs
+	*/
+
 	newRS, oldRSs, err := dc.getAllReplicaSetsAndSyncRevision(ctx, d, rsList, true)
 	if err != nil {
 		return err
 	}
+	// allRSs: 所有的rs
 	allRSs := append(oldRSs, newRS)
 
 	// Scale up, if we can.
@@ -76,6 +82,7 @@ func (dc *DeploymentController) reconcileNewReplicaSet(ctx context.Context, allR
 		scaled, _, err := dc.scaleReplicaSetAndRecordEvent(ctx, newRS, *(deployment.Spec.Replicas), deployment)
 		return scaled, err
 	}
+	// Scale up
 	newReplicasCount, err := deploymentutil.NewRSNewReplicas(deployment, allRSs, newRS)
 	if err != nil {
 		return false, err
