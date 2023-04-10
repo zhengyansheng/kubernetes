@@ -1,6 +1,20 @@
-# Kubernetes (K8s)
+# 记录
+[1. kube-scheduler](./imgs/kubernetes-scheduler-func-call-arch.jpg)
 
-[kube-scheduler](./imgs/kubernetes-scheduler-func-call-arch.jpg)
+
+
+
+
+
+
+
+
+
+
+
+
+------
+# Kubernetes (K8s)
 
 
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/569/badge)](https://bestpractices.coreinfrastructure.org/projects/569)
