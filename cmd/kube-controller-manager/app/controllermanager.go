@@ -449,19 +449,27 @@ func NewControllerInitializers(loopMode ControllerLoopMode) map[string]InitFunc 
 	}
 
 	// 控制器名称 -> 启动对应控制器的函数
-	register("endpoint", startEndpointController)
+
+	// *****
+	register("endpoint", startEndpointController) // *****
 	register("endpointslice", startEndpointSliceController)
 	register("endpointslicemirroring", startEndpointSliceMirroringController)
 	register("replicationcontroller", startReplicationController)
-	register("podgc", startPodGCController)
+
+	// *****
+	register("podgc", startPodGCController) // *****
 	register("resourcequota", startResourceQuotaController)
 	register("namespace", startNamespaceController)
 	register("serviceaccount", startServiceAccountController)
 	register("garbagecollector", startGarbageCollectorController)
 	register("daemonset", startDaemonSetController)
 	register("job", startJobController)
-	register("deployment", startDeploymentController)
+
+	// *****
+	register("deployment", startDeploymentController) // *****
 	register("replicaset", startReplicaSetController)
+
+	// *****
 	register("horizontalpodautoscaling", startHPAController)
 	register("disruption", startDisruptionController)
 	register("statefulset", startStatefulSetController)

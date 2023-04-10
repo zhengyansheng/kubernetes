@@ -44,9 +44,11 @@ import (
 
 const (
 	// gcCheckPeriod defines frequency of running main controller loop
+	// gc的时间间隔，很显然是20s，而且这个数值不支持从命令参数中配置
 	gcCheckPeriod = 20 * time.Second
 	// quarantineTime defines how long Orphaned GC waits for nodes to show up
 	// in an informer before issuing a GET call to check if they are truly gone
+	// 是在删除孤儿pod时等待节点ready前的时间
 	quarantineTime = 40 * time.Second
 
 	// field manager used to add pod failure condition and change the pod phase
@@ -64,8 +66,8 @@ type PodGCController struct {
 	nodeQueue workqueue.DelayingInterface // workqueue 的延迟队列
 
 	terminatedPodThreshold int           // pod 终止阈值
-	gcCheckPeriod          time.Duration // gc检查周期
-	quarantineTime         time.Duration
+	gcCheckPeriod          time.Duration // gc检查周期 20s
+	quarantineTime         time.Duration // 隔离期 40s
 }
 
 func init() {
@@ -107,32 +109,39 @@ func (gcc *PodGCController) Run(ctx context.Context) {
 		return
 	}
 
-	go wait.UntilWithContext(ctx, gcc.gc, gcc.gcCheckPeriod)
+	// 每隔20s执行一次gc
+	go wait.UntilWithContext(ctx, gcc.gc, gcc.gcCheckPeriod) // gcCheckPeriod = 20 * time.Second
 
 	<-ctx.Done()
 }
 
 func (gcc *PodGCController) gc(ctx context.Context) {
+	// 1. 拿到所有的pods
 	pods, err := gcc.podLister.List(labels.Everything())
 	if err != nil {
 		klog.Errorf("Error while listing all pods: %v", err)
 		return
 	}
+	// 2. 拿到所有的nodes
 	nodes, err := gcc.nodeLister.List(labels.Everything())
 	if err != nil {
 		klog.Errorf("Error while listing all nodes: %v", err)
 		return
 	}
 	if gcc.terminatedPodThreshold > 0 {
+		// 如果 terminatedPodThreshold 大于0 则开始回收pods
 		gcc.gcTerminated(ctx, pods)
 	}
 	if utilfeature.DefaultFeatureGate.Enabled(features.NodeOutOfServiceVolumeDetach) {
 		gcc.gcTerminating(ctx, pods)
 	}
+	// 回收 Orphaned 独立的pods
 	gcc.gcOrphaned(ctx, pods, nodes)
+	// 回收未调度的pods
 	gcc.gcUnscheduledTerminating(ctx, pods)
 }
 
+// isPodTerminated  not in (pending, running, unknown);return true
 func isPodTerminated(pod *v1.Pod) bool {
 	if phase := pod.Status.Phase; phase != v1.PodPending && phase != v1.PodRunning && phase != v1.PodUnknown {
 		return true
@@ -190,19 +199,22 @@ func (gcc *PodGCController) gcTerminating(ctx context.Context, pods []*v1.Pod) {
 	wait.Wait()
 }
 
+// gcTerminated 回收pods
 func (gcc *PodGCController) gcTerminated(ctx context.Context, pods []*v1.Pod) {
 	terminatedPods := []*v1.Pod{}
 	for _, pod := range pods {
+		// not in (pending, running, unknown);return true
 		if isPodTerminated(pod) {
+			// 删除状态才会进入
 			terminatedPods = append(terminatedPods, pod)
 		}
 	}
 
 	terminatedPodCount := len(terminatedPods)
-	deleteCount := terminatedPodCount - gcc.terminatedPodThreshold
+	deleteCount := terminatedPodCount - gcc.terminatedPodThreshold // 12500
 
 	if deleteCount <= 0 {
-		// 直接退出
+		// 直接退出，没有要终止的pods
 		return
 	}
 
@@ -214,6 +226,7 @@ func (gcc *PodGCController) gcTerminated(ctx context.Context, pods []*v1.Pod) {
 		wait.Add(1)
 		go func(pod *v1.Pod) {
 			defer wait.Done()
+			// 标记并删除pod
 			if err := gcc.markFailedAndDeletePod(ctx, pod); err != nil {
 				// ignore not founds
 				defer utilruntime.HandleError(err)
@@ -226,22 +239,26 @@ func (gcc *PodGCController) gcTerminated(ctx context.Context, pods []*v1.Pod) {
 // gcOrphaned deletes pods that are bound to nodes that don't exist.
 func (gcc *PodGCController) gcOrphaned(ctx context.Context, pods []*v1.Pod, nodes []*v1.Node) {
 	klog.V(4).Infof("GC'ing orphaned")
-	existingNodeNames := sets.NewString()
+	existingNodeNames := sets.NewString() // ["node1", "node2", "node3"]
 	for _, node := range nodes {
 		existingNodeNames.Insert(node.Name)
 	}
 	// Add newly found unknown nodes to quarantine
 	for _, pod := range pods {
+		// "node4"
 		if pod.Spec.NodeName != "" && !existingNodeNames.Has(pod.Spec.NodeName) {
-			gcc.nodeQueue.AddAfter(pod.Spec.NodeName, gcc.quarantineTime)
+			// nodeName 已经下线，添加到 nodeQueue队列中
+			gcc.nodeQueue.AddAfter(pod.Spec.NodeName, gcc.quarantineTime) // 40 * time.Second
 		}
 	}
 	// Check if nodes are still missing after quarantine period
+	// 二次确认
 	deletedNodesNames, quit := gcc.discoverDeletedNodes(ctx, existingNodeNames)
 	if quit {
 		return
 	}
 	// Delete orphaned pods
+	// 删除孤儿pods
 	for _, pod := range pods {
 		if !deletedNodesNames.Has(pod.Spec.NodeName) {
 			continue
@@ -253,9 +270,11 @@ func (gcc *PodGCController) gcOrphaned(ctx context.Context, pods []*v1.Pod, node
 			WithReason("DeletionByPodGC").
 			WithMessage("PodGC: node no longer exists").
 			WithLastTransitionTime(metav1.Now())
+		// markFailedAndDeletePodWithCondition 强制删除pod
 		if err := gcc.markFailedAndDeletePodWithCondition(ctx, pod, condition); err != nil {
 			utilruntime.HandleError(err)
 		} else {
+			// 强制删除孤立Pod成功
 			klog.InfoS("Forced deletion of orphaned Pod succeeded", "pod", klog.KObj(pod))
 		}
 	}
@@ -264,11 +283,12 @@ func (gcc *PodGCController) gcOrphaned(ctx context.Context, pods []*v1.Pod, node
 func (gcc *PodGCController) discoverDeletedNodes(ctx context.Context, existingNodeNames sets.String) (sets.String, bool) {
 	deletedNodesNames := sets.NewString()
 	for gcc.nodeQueue.Len() > 0 {
-		item, quit := gcc.nodeQueue.Get()
+		item, quit := gcc.nodeQueue.Get() // quit 是 通道关闭的意思
 		if quit {
 			return nil, true
 		}
 		nodeName := item.(string)
+		// existingNodeNames 是集群中所有的nodes
 		if !existingNodeNames.Has(nodeName) {
 			exists, err := gcc.checkIfNodeExists(ctx, nodeName)
 			switch {
@@ -284,6 +304,7 @@ func (gcc *PodGCController) discoverDeletedNodes(ctx context.Context, existingNo
 	return deletedNodesNames, false
 }
 
+// checkIfNodeExists 检查node是否存在
 func (gcc *PodGCController) checkIfNodeExists(ctx context.Context, name string) (bool, error) {
 	_, fetchErr := gcc.kubeClient.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 	if errors.IsNotFound(fetchErr) {
@@ -323,6 +344,7 @@ func (o byCreationTimestamp) Less(i, j int) bool {
 	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
 }
 
+// markFailedAndDeletePod 标记失败并删除pods
 func (gcc *PodGCController) markFailedAndDeletePod(ctx context.Context, pod *v1.Pod) error {
 	return gcc.markFailedAndDeletePodWithCondition(ctx, pod, nil)
 }

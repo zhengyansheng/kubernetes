@@ -532,6 +532,7 @@ func (dc *DeploymentController) isScalingEvent(ctx context.Context, d *apps.Depl
 		return false, err
 	}
 	allRSs := append(oldRSs, newRS)
+	// FilterActiveReplicaSets 过滤 rs 中有pod的 rs 数组
 	for _, rs := range controller.FilterActiveReplicaSets(allRSs) {
 		desired, ok := deploymentutil.GetDesiredReplicasAnnotation(rs)
 		if !ok {

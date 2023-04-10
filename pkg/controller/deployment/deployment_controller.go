@@ -107,7 +107,7 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		client:           client,
 		eventBroadcaster: eventBroadcaster,
 		eventRecorder:    eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "deployment-controller"}),
-		// queue -> 限速队列
+		// queue -> workqueue 限速队列
 		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "deployment"),
 	}
 	dc.rsControl = controller.RealRSControl{
@@ -115,6 +115,7 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		Recorder:   dc.eventRecorder,
 	}
 
+	// deployment/ replicaset/ pod 添加资源事件
 	dInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dc.addDeployment,
 		UpdateFunc: dc.updateDeployment,
@@ -127,23 +128,20 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		DeleteFunc: dc.deleteReplicaSet,
 	})
 	// podInformer: PodInformer provides access to a shared informer and lister for pods
-	// podInformer: 提供了访问Shared Informer 和 列出所有的Pods
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		DeleteFunc: dc.deletePod,
 	})
 
-	dc.syncHandler = dc.syncDeployment // 同步 deployment func
-	dc.enqueueDeployment = dc.enqueue  // 入队
+	dc.syncHandler = dc.syncDeployment // 同步 deployment
+	dc.enqueueDeployment = dc.enqueue  // 入队 workqueue
 
+	// deployment/ replicaset/ pod 获取 indexInformer
 	dc.dLister = dInformer.Lister()
 	dc.rsLister = rsInformer.Lister()
 	// podLister: List lists all Pods in the indexer.
-	// 通过 索引 来列出所有的Pods
-	// read-only
 	dc.podLister = podInformer.Lister()
-	/*
-		如果 shared informer 已经做过至少一次的 full LIST 全量同步 则返回true
-	*/
+
+	// 如果 shared informer 已经做过至少一次的 full LIST 全量同步 则返回true
 	dc.dListerSynced = dInformer.Informer().HasSynced
 	dc.rsListerSynced = rsInformer.Informer().HasSynced
 	dc.podListerSynced = podInformer.Informer().HasSynced
@@ -159,21 +157,23 @@ func (dc *DeploymentController) Run(ctx context.Context, workers int) {
 	dc.eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: dc.client.CoreV1().Events("")})
 	defer dc.eventBroadcaster.Shutdown()
 
-	// 关闭 queue
+	// 关闭 workqueue
 	defer dc.queue.ShutDown()
 
 	klog.InfoS("Starting controller", "controller", "deployment")
 	defer klog.InfoS("Shutting down controller", "controller", "deployment")
 
-	// 等价于 WaitForCacheSync
+	// 等价于 WaitForCacheSync 等待 informer 同步完成
 	if !cache.WaitForNamedCacheSync("deployment", ctx.Done(), dc.dListerSynced, dc.rsListerSynced, dc.podListerSynced) {
 		return
 	}
 
 	for i := 0; i < workers; i++ {
+		// worker/s
 		go wait.UntilWithContext(ctx, dc.worker, time.Second)
 	}
 
+	// 阻塞
 	<-ctx.Done()
 }
 
@@ -489,7 +489,7 @@ func (dc *DeploymentController) worker(ctx context.Context) {
 
 func (dc *DeploymentController) processNextWorkItem(ctx context.Context) bool {
 	// key: default/pod1
-	key, quit := dc.queue.Get()
+	key, quit := dc.queue.Get() // Get -> Pop()
 	if quit {
 		return false
 	}
@@ -592,19 +592,21 @@ func (dc *DeploymentController) getPodMapForDeployment(d *apps.Deployment, rsLis
 // syncDeployment will sync the deployment with the given key.
 // This function is not meant to be invoked concurrently with the same key.
 func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) error {
-	// key: default/pod1
+	// key: default/pod1 -> (namespace, name)
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
 		return err
 	}
 
+	// 计算 syncDeployment 耗时
 	startTime := time.Now()
 	klog.V(4).InfoS("Started syncing deployment", "deployment", klog.KRef(namespace, name), "startTime", startTime)
 	defer func() {
 		klog.V(4).InfoS("Finished syncing deployment", "deployment", klog.KRef(namespace, name), "duration", time.Since(startTime))
 	}()
 
+	// 获取 deployment 对象
 	deployment, err := dc.dLister.Deployments(namespace).Get(name)
 	if errors.IsNotFound(err) {
 		klog.V(2).InfoS("Deployment has been deleted", "deployment", klog.KRef(namespace, name))
@@ -620,9 +622,11 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 
 	everything := metav1.LabelSelector{}
 	if reflect.DeepEqual(d.Spec.Selector, &everything) {
+		// 深度比较 selector 相等
 		dc.eventRecorder.Eventf(d, v1.EventTypeWarning, "SelectingAll", "This deployment is selecting all pods. A non-empty selector is required.")
 		if d.Status.ObservedGeneration < d.Generation {
 			d.Status.ObservedGeneration = d.Generation
+			// 同步 deployment 状态
 			dc.client.AppsV1().Deployments(d.Namespace).UpdateStatus(ctx, d, metav1.UpdateOptions{})
 		}
 		return nil
@@ -647,8 +651,8 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		return err
 	}
 
-	// deployment 被删除了
 	if d.DeletionTimestamp != nil {
+		// deployment 如果被删除了 仅同步状态
 		return dc.syncStatusOnly(ctx, d, rsList)
 	}
 
@@ -659,8 +663,8 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		return err
 	}
 
-	// deployment 暂停了
 	if d.Spec.Paused {
+		// deployment 是暂停状态，则同步一次
 		return dc.sync(ctx, d, rsList)
 	}
 
@@ -668,14 +672,17 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 	// revision so we should ensure that we won't proceed to update replica sets until we
 	// make sure that the deployment has cleaned up its rollback spec in subsequent enqueues.
 	if getRollbackTo(d) != nil {
+		// 如果需要回滚，则执行回滚
 		return dc.rollback(ctx, d, rsList)
 	}
 
+	// 获取扩容事件
 	scalingEvent, err := dc.isScalingEvent(ctx, d, rsList)
 	if err != nil {
 		return err
 	}
 	if scalingEvent {
+		// 如果有扩容则同步一次
 		return dc.sync(ctx, d, rsList)
 	}
 

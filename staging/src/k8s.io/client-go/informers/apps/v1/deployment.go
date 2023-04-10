@@ -59,7 +59,7 @@ func NewDeploymentInformer(client kubernetes.Interface, namespace string, resync
 NewFilteredDeploymentInformer 构造一个新的 Deployment 类型的 informer
 总是喜欢使用一个 informer 工厂去获取一个 shared informer，而不是使用一个独立的informer
 这是为了减少内存和到服务器的连接数
- */
+*/
 func NewFilteredDeploymentInformer(client kubernetes.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{

@@ -80,6 +80,7 @@ func NewEndpointController(podInformer coreinformers.PodInformer, serviceInforme
 		workerLoopPeriod: time.Second,
 	}
 
+	// service informer
 	serviceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: e.onServiceUpdate,
 		UpdateFunc: func(old, cur interface{}) {
@@ -90,6 +91,7 @@ func NewEndpointController(podInformer coreinformers.PodInformer, serviceInforme
 	e.serviceLister = serviceInformer.Lister()
 	e.servicesSynced = serviceInformer.Informer().HasSynced
 
+	// pod informer
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    e.addPod,
 		UpdateFunc: e.updatePod,
@@ -98,6 +100,7 @@ func NewEndpointController(podInformer coreinformers.PodInformer, serviceInforme
 	e.podLister = podInformer.Lister()
 	e.podsSynced = podInformer.Informer().HasSynced
 
+	// endpoints informer
 	endpointsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		DeleteFunc: e.onEndpointsDelete,
 	})
@@ -192,12 +195,14 @@ func (e *Controller) Run(ctx context.Context, workers int) {
 // enqueue them. obj must have *v1.Pod type.
 func (e *Controller) addPod(obj interface{}) {
 	pod := obj.(*v1.Pod)
+	// GetPodServiceMemberships: service 的 selector 为该 pod label 的子集
 	services, err := endpointutil.GetPodServiceMemberships(e.serviceLister, pod)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Unable to get pod %s/%s's service memberships: %v", pod.Namespace, pod.Name, err))
 		return
 	}
 	for key := range services {
+		// 延迟添加到队列
 		e.queue.AddAfter(key, e.endpointUpdatesBatchPeriod)
 	}
 }
@@ -362,6 +367,7 @@ func (e *Controller) syncService(ctx context.Context, key string) error {
 	service, err := e.serviceLister.Services(namespace).Get(name)
 	if err != nil {
 		if !errors.IsNotFound(err) {
+			// 非 notFound 直接返回
 			return err
 		}
 
@@ -447,6 +453,7 @@ func (e *Controller) syncService(ctx context.Context, key string) error {
 	subsets = endpoints.RepackSubsets(subsets)
 
 	// See if there's actually an update here.
+	// 查询service同命名空间下同名的endpoint
 	currentEndpoints, err := e.endpointsLister.Endpoints(service.Namespace).Get(service.Name)
 	if err != nil {
 		if !errors.IsNotFound(err) {
@@ -460,6 +467,8 @@ func (e *Controller) syncService(ctx context.Context, key string) error {
 		}
 	}
 
+	// createEndpoints bool
+	// currentEndpoints 的资源版本为空时，表示要创建endpoint
 	createEndpoints := len(currentEndpoints.ResourceVersion) == 0
 
 	// Compare the sorted subsets and labels
@@ -513,9 +522,11 @@ func (e *Controller) syncService(ctx context.Context, key string) error {
 	klog.V(4).Infof("Update endpoints for %v/%v, ready: %d not ready: %d", service.Namespace, service.Name, totalReadyEps, totalNotReadyEps)
 	if createEndpoints {
 		// No previous endpoints, create them
+		// 创建与service同名的endpoint
 		_, err = e.client.CoreV1().Endpoints(service.Namespace).Create(ctx, newEndpoints, metav1.CreateOptions{})
 	} else {
 		// Pre-existing
+		// 更新与service同名的endpoint
 		_, err = e.client.CoreV1().Endpoints(service.Namespace).Update(ctx, newEndpoints, metav1.UpdateOptions{})
 	}
 	if err != nil {
@@ -524,9 +535,14 @@ func (e *Controller) syncService(ctx context.Context, key string) error {
 			// 1. namespace is terminating, endpoint creation is not allowed by default.
 			// 2. policy is misconfigured, in which case no service would function anywhere.
 			// Given the frequency of 1, we log at a lower level.
+			//禁止请求主要有两个原因：
+			// 1. 命名空间正在终止，默认情况下不允许创建端点。
+			// 2. 策略配置错误，在这种情况下，任何服务都无法在任何地方运行。
+			//如果频率为1，我们将以较低的级别登录。
 			klog.V(5).Infof("Forbidden from creating endpoints: %v", err)
 
 			// If the namespace is terminating, creates will continue to fail. Simply drop the item.
+			// 如果命名空间正在终止，则创建将继续失败。
 			if errors.HasStatusCause(err, v1.NamespaceTerminatingCause) {
 				return nil
 			}

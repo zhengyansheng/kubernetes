@@ -399,6 +399,7 @@ func startReplicationController(ctx context.Context, controllerContext Controlle
 	return nil, true, nil
 }
 
+// startPodGCController 启动 pod gc 控制器
 func startPodGCController(ctx context.Context, controllerContext ControllerContext) (controller.Interface, bool, error) {
 	go podgc.NewPodGC(
 		ctx,

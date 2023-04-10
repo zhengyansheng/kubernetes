@@ -32,7 +32,7 @@ import (
 /*
 	公开去允许构建任意的schemes
 	所有生成的默认值都包含 -
- */
+*/
 func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&v1beta2.DefaultPreemptionArgs{}, func(obj interface{}) { SetObjectDefaults_DefaultPreemptionArgs(obj.(*v1beta2.DefaultPreemptionArgs)) })
 	scheme.AddTypeDefaultingFunc(&v1beta2.InterPodAffinityArgs{}, func(obj interface{}) { SetObjectDefaults_InterPodAffinityArgs(obj.(*v1beta2.InterPodAffinityArgs)) })
