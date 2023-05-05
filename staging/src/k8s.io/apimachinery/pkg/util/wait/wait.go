@@ -152,6 +152,7 @@ func BackoffUntil(f func(), backoff BackoffManager, sliding bool, stopCh <-chan 
 			t = backoff.Backoff()
 		}
 
+		// 兜底 panic
 		func() {
 			defer runtime.HandleCrash()
 			f()
@@ -190,8 +191,7 @@ func JitterUntilWithContext(ctx context.Context, f func(context.Context), period
 	JitterUntil(func() { f(ctx) }, period, jitterFactor, sliding, ctx.Done())
 }
 
-// Jitter returns a time.Duration between duration and duration + maxFactor *
-// duration.
+// Jitter returns a time.Duration between duration and duration + maxFactor * duration.
 //
 // This allows clients to avoid converging on periodic behavior. If maxFactor
 // is 0.0, a suggested default value will be chosen.
@@ -199,6 +199,8 @@ func Jitter(duration time.Duration, maxFactor float64) time.Duration {
 	if maxFactor <= 0.0 {
 		maxFactor = 1.0
 	}
+	// 介于 duration ~ duration + duration * maxFactor 之间
+	// 如果 duration = 2, maxFactor = 0.8 ; 2 ~ 2 + 2 * 0.8
 	wait := duration + time.Duration(rand.Float64()*maxFactor*float64(duration))
 	return wait
 }
@@ -330,6 +332,7 @@ type exponentialBackoffManagerImpl struct {
 // NewExponentialBackoffManager returns a manager for managing exponential backoff. Each backoff is jittered and
 // backoff will not exceed the given max. If the backoff is not called within resetDuration, the backoff is reset.
 // This backoff manager is used to reduce load during upstream unhealthiness.
+// 指数退避
 func NewExponentialBackoffManager(initBackoff, maxBackoff, resetDuration time.Duration, backoffFactor, jitter float64, c clock.Clock) BackoffManager {
 	return &exponentialBackoffManagerImpl{
 		backoff: &Backoff{
@@ -377,8 +380,10 @@ type jitteredBackoffManagerImpl struct {
 	backoffTimer clock.Timer
 }
 
-// NewJitteredBackoffManager returns a BackoffManager that backoffs with given duration plus given jitter. If the jitter
-// is negative, backoff will not be jittered.
+// NewJitteredBackoffManager returns a BackoffManager that backoffs with given duration plus given jitter.
+// If the jitter is negative, backoff will not be jittered.
+// NewJitteredBackoffManager返回一个BackoffManager，该BackoffManager以给定的持续时间加上给定的抖动进行回退。
+// 如果抖动为负值，则退避不会抖动
 func NewJitteredBackoffManager(duration time.Duration, jitter float64, c clock.Clock) BackoffManager {
 	return &jitteredBackoffManagerImpl{
 		clock:        c,
@@ -389,6 +394,8 @@ func NewJitteredBackoffManager(duration time.Duration, jitter float64, c clock.C
 }
 
 func (j *jitteredBackoffManagerImpl) getNextBackoff() time.Duration {
+	// 如果 jitter 小于 0 ，则 返回 duration 的值
+	// 如果 jitter 大于 0 ，则 返回 duration + duration * jitter
 	jitteredPeriod := j.duration
 	if j.jitter > 0.0 {
 		jitteredPeriod = Jitter(j.duration, j.jitter)
@@ -399,10 +406,12 @@ func (j *jitteredBackoffManagerImpl) getNextBackoff() time.Duration {
 // Backoff implements BackoffManager.Backoff, it returns a timer so caller can block on the timer for jittered backoff.
 // The returned timer must be drained before calling Backoff() the second time
 func (j *jitteredBackoffManagerImpl) Backoff() clock.Timer {
+	// backoff 就是 间隔 period + jitterFactor
 	backoff := j.getNextBackoff()
 	if j.backoffTimer == nil {
 		j.backoffTimer = j.clock.NewTimer(backoff)
 	} else {
+		// 重置 否则会堵塞
 		j.backoffTimer.Reset(backoff)
 	}
 	return j.backoffTimer
