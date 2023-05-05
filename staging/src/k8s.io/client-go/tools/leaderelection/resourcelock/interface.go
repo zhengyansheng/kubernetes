@@ -19,9 +19,10 @@ package resourcelock
 import (
 	"context"
 	"fmt"
+	"time"
+
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,9 +31,9 @@ import (
 )
 
 const (
-	LeaderElectionRecordAnnotationKey = "control-plane.alpha.kubernetes.io/leader"
-	endpointsResourceLock             = "endpoints"
-	configMapsResourceLock            = "configmaps"
+	LeaderElectionRecordAnnotationKey = "control-plane.alpha.kubernetes.io/leader" // 这个字段在 lease 基本用不到
+	endpointsResourceLock             = "endpoints"                                // 已经废弃
+	configMapsResourceLock            = "configmaps"                               // 已经废弃
 	LeasesResourceLock                = "leases"
 	// When using EndpointsLeasesResourceLock, you need to ensure that
 	// API Priority & Fairness is configured with non-default flow-schema
@@ -108,17 +109,22 @@ const (
 // This information should be used for observational purposes only and could be replaced
 // with a random string (e.g. UUID) with only slight modification of this code.
 // TODO(mikedanese): this should potentially be versioned
+/*
+//LeaderElectionRecord是存储在领导人选举注释中的记录。
+//这些信息只能用于观测目的，可以替换
+//带有一个随机字符串（例如UUID），只对该代码进行了轻微修改。
+*/
 type LeaderElectionRecord struct {
 	// HolderIdentity is the ID that owns the lease. If empty, no one owns this lease and
 	// all callers may acquire. Versions of this library prior to Kubernetes 1.14 will not
 	// attempt to acquire leases with empty identities and will wait for the full lease
 	// interval to expire before attempting to reacquire. This value is set to empty when
 	// a client voluntarily steps down.
-	HolderIdentity       string      `json:"holderIdentity"`
-	LeaseDurationSeconds int         `json:"leaseDurationSeconds"`
-	AcquireTime          metav1.Time `json:"acquireTime"`
-	RenewTime            metav1.Time `json:"renewTime"`
-	LeaderTransitions    int         `json:"leaderTransitions"`
+	HolderIdentity       string      `json:"holderIdentity"`       // 身份的唯一标识
+	LeaseDurationSeconds int         `json:"leaseDurationSeconds"` // 租约周期
+	AcquireTime          metav1.Time `json:"acquireTime"`          // 获取锁的时间
+	RenewTime            metav1.Time `json:"renewTime"`            // 续订锁的时间
+	LeaderTransitions    int         `json:"leaderTransitions"`    // leader 转换的次数
 }
 
 // EventRecorder records a change in the ResourceLock.
@@ -162,7 +168,8 @@ type Interface interface {
 	Describe() string
 }
 
-// Manufacture will create a lock of a given type according to the input parameters
+// New Manufacture will create a lock of a given type according to the input parameters
+// New 制造商将根据输入参数创建给定类型的锁
 func New(lockType string, ns string, name string, coreClient corev1.CoreV1Interface, coordinationClient coordinationv1.CoordinationV1Interface, rlc ResourceLockConfig) (Interface, error) {
 	endpointsLock := &endpointsLock{
 		EndpointsMeta: metav1.ObjectMeta{
@@ -190,6 +197,7 @@ func New(lockType string, ns string, name string, coreClient corev1.CoreV1Interf
 	}
 	switch lockType {
 	case endpointsResourceLock:
+		// migrate 迁移
 		return nil, fmt.Errorf("endpoints lock is removed, migrate to %s", EndpointsLeasesResourceLock)
 	case configMapsResourceLock:
 		return nil, fmt.Errorf("configmaps lock is removed, migrate to %s", ConfigMapsLeasesResourceLock)
@@ -217,11 +225,16 @@ func New(lockType string, ns string, name string, coreClient corev1.CoreV1Interf
 func NewFromKubeconfig(lockType string, ns string, name string, rlc ResourceLockConfig, kubeconfig *restclient.Config, renewDeadline time.Duration) (Interface, error) {
 	// shallow copy, do not modify the kubeconfig
 	config := *kubeconfig
+	// 设置Timeout, 范围在 max(time.Second, RenewDeadline/2)
 	timeout := renewDeadline / 2
 	if timeout < time.Second {
 		timeout = time.Second
 	}
 	config.Timeout = timeout
+
+	// 初始化 clientSet -> leaderElectionClient
 	leaderElectionClient := clientset.NewForConfigOrDie(restclient.AddUserAgent(&config, "leader-election"))
+
+	// 创建锁
 	return New(lockType, ns, name, leaderElectionClient.CoreV1(), leaderElectionClient.CoordinationV1(), rlc)
 }

@@ -324,6 +324,9 @@ func (le *LeaderElector) tryAcquireOrRenew(ctx context.Context) bool {
 	}
 
 	// 1. obtain or create the ElectionRecord
+	// 获取 ElectionRecord
+	// oldLeaderElectionRecord: LeaderElectionRecord spec
+	// oldLeaderElectionRawRecord: LeaderElectionRecord spec byte
 	oldLeaderElectionRecord, oldLeaderElectionRawRecord, err := le.config.Lock.Get(ctx)
 	if err != nil {
 		if !errors.IsNotFound(err) {

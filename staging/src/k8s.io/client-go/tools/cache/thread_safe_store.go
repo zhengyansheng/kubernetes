@@ -73,8 +73,8 @@ func (i *storeIndex) reset() {
 }
 
 /*
-   indexName: namespace
-   obj: pod1Object
+indexName: namespace
+obj: pod1Object
 */
 func (i *storeIndex) getKeysFromIndex(indexName string, obj interface{}) (sets.String, error) {
 	// type Indexers map[string]IndexFunc

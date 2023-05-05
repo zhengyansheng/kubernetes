@@ -257,14 +257,14 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 		return nil
 	}
 
-	// 主机名
+	// id: 获取当前主机名
 	id, err := os.Hostname()
 	if err != nil {
 		return err
 	}
 
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
-	// 保证唯一性
+	// 保证唯一性 id _ uuid
 	id = id + "_" + string(uuid.NewUUID())
 
 	// leaderMigrator will be non-nil if and only if Leader Migration is enabled.
