@@ -199,16 +199,24 @@ type LeaderElector struct {
 // stopped holding the leader lease
 func (le *LeaderElector) Run(ctx context.Context) {
 	defer runtime.HandleCrash()
+
+	// 函数退出时 调用 OnStoppedLeading
 	defer func() {
 		le.config.Callbacks.OnStoppedLeading()
 	}()
 
+	// 持续获取锁， 直到 获取锁成功 或者 ctx 被取消
 	if !le.acquire(ctx) {
 		return // ctx signalled done
 	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	// 获取锁成功时 调用 OnStartedLeading
 	go le.config.Callbacks.OnStartedLeading(ctx)
+
+	// 获取锁成功时 调用 renew ，更新leader的租约
 	le.renew(ctx)
 }
 
@@ -216,6 +224,7 @@ func (le *LeaderElector) Run(ctx context.Context) {
 // fails to validate. RunOrDie blocks until leader election loop is
 // stopped by ctx or it has stopped holding the leader lease
 func RunOrDie(ctx context.Context, lec LeaderElectionConfig) {
+	// 实例化 leader elector
 	le, err := NewLeaderElector(lec)
 	if err != nil {
 		panic(err)
@@ -223,6 +232,7 @@ func RunOrDie(ctx context.Context, lec LeaderElectionConfig) {
 	if lec.WatchDog != nil {
 		lec.WatchDog.SetLeaderElection(le)
 	}
+	// 启动 leader elector
 	le.Run(ctx)
 }
 
@@ -241,23 +251,34 @@ func (le *LeaderElector) IsLeader() bool {
 // acquire loops calling tryAcquireOrRenew and returns true immediately when tryAcquireOrRenew succeeds.
 // Returns false if ctx signals done.
 func (le *LeaderElector) acquire(ctx context.Context) bool {
+	// 父控制子ctx
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
 	succeeded := false
 	desc := le.config.Lock.Describe()
 	klog.Infof("attempting to acquire leader lease %v...", desc)
+
+	// JitterUntil: 直到 ctx 被 cancel()，否则持续运行
 	wait.JitterUntil(func() {
+		// 尝试获取租约和续订租约，如果失败 则继续
 		succeeded = le.tryAcquireOrRenew(ctx)
+
 		le.maybeReportTransition()
+
 		if !succeeded {
+			klog.Infof("failed to acquire lease %v", desc)
 			klog.V(4).Infof("failed to acquire lease %v", desc)
 			return
 		}
 		le.config.Lock.RecordEvent("became leader")
 		le.metrics.leaderOn(le.config.Name)
 		klog.Infof("successfully acquired lease %v", desc)
+
+		// 获取租约成功则 context cancel()
 		cancel()
 	}, le.config.RetryPeriod, JitterFactor, true, ctx.Done())
+
 	return succeeded
 }
 
@@ -265,9 +286,14 @@ func (le *LeaderElector) acquire(ctx context.Context) bool {
 func (le *LeaderElector) renew(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	// Until: 直到
 	wait.Until(func() {
+		// 设置超时
 		timeoutCtx, timeoutCancel := context.WithTimeout(ctx, le.config.RenewDeadline)
 		defer timeoutCancel()
+
+		// 立刻轮训
 		err := wait.PollImmediateUntil(le.config.RetryPeriod, func() (bool, error) {
 			return le.tryAcquireOrRenew(timeoutCtx), nil
 		}, timeoutCtx.Done())
@@ -280,12 +306,16 @@ func (le *LeaderElector) renew(ctx context.Context) {
 		}
 		le.config.Lock.RecordEvent("stopped leading")
 		le.metrics.leaderOff(le.config.Name)
+
 		klog.Infof("failed to renew lease %v: %v", desc, err)
+
+		// 如果超时了，更新租约锁失败，则 context 被 cancel()
 		cancel()
 	}, le.config.RetryPeriod, ctx.Done())
 
 	// if we hold the lease, give it up
 	if le.config.ReleaseOnCancel {
+		klog.Infof("release -> giving up lease %v", le.config.Lock.Describe())
 		le.release()
 	}
 }
@@ -296,6 +326,7 @@ func (le *LeaderElector) release() bool {
 		return true
 	}
 	now := metav1.Now()
+	// 设置 holderIdentity 为空
 	leaderElectionRecord := rl.LeaderElectionRecord{
 		LeaderTransitions:    le.observedRecord.LeaderTransitions,
 		LeaseDurationSeconds: 1,
@@ -349,6 +380,8 @@ func (le *LeaderElector) tryAcquireOrRenew(ctx context.Context) bool {
 
 		le.observedRawRecord = oldLeaderElectionRawRecord
 	}
+	klog.Infof("holder identity: %v, is leader: %v", oldLeaderElectionRecord.HolderIdentity, le.IsLeader())
+	klog.Infof("observedTime: %v, now time: %v", le.observedTime.Add(le.config.LeaseDuration), now.Time)
 	if len(oldLeaderElectionRecord.HolderIdentity) > 0 &&
 		le.observedTime.Add(le.config.LeaseDuration).After(now.Time) &&
 		!le.IsLeader() {
@@ -407,7 +440,9 @@ func (le *LeaderElector) setObservedRecord(observedRecord *rl.LeaderElectionReco
 	le.observedRecordLock.Lock()
 	defer le.observedRecordLock.Unlock()
 
+	// 更新可观测的 leader election record
 	le.observedRecord = *observedRecord
+	// 可观测时间被修改成当前时间
 	le.observedTime = le.clock.Now()
 }
 
