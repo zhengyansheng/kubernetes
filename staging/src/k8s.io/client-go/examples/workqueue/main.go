@@ -123,6 +123,7 @@ func (c *Controller) Run(workers int, stopCh chan struct{}) {
 	defer c.queue.ShutDown()
 	klog.Info("Starting Pod controller")
 
+	// 启动 informer
 	go c.informer.Run(stopCh)
 
 	// Wait for all involved caches to be synced, before processing items from the queue is started
@@ -168,6 +169,7 @@ func main() {
 	podListWatcher := cache.NewListWatchFromClient(clientset.CoreV1().RESTClient(), "pods", v1.NamespaceDefault, fields.Everything())
 
 	// create the workqueue
+	// 创建一个队列，用于存放需要处理的pod的key workqueue.RateLimitingInterface是一个接口，实现了Add,Done,Forget,NumRequeues方法
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 
 	// Bind the workqueue to a cache with the help of an informer. This way we make sure that
@@ -176,20 +178,23 @@ func main() {
 	// of the Pod than the version which was responsible for triggering the update.
 	indexer, informer := cache.NewIndexerInformer(podListWatcher, &v1.Pod{}, 0, cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
+			// obj 是一个pod对象，这里的key是namespace/name
 			key, err := cache.MetaNamespaceKeyFunc(obj)
 			if err == nil {
+				// 将key放入队列
 				queue.Add(key)
 			}
 		},
 		UpdateFunc: func(old interface{}, new interface{}) {
+			// 同 AddFunc
 			key, err := cache.MetaNamespaceKeyFunc(new)
 			if err == nil {
 				queue.Add(key)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			// IndexerInformer uses a delta queue, therefore for deletes we have to use this
-			// key function.
+			// IndexerInformer uses a delta queue, therefore for deletes we have to use this key function.
+			// DeletionHandlingMetaNamespaceKeyFunc is a wrapper around MetaNamespaceKeyFunc which handles
 			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 			if err == nil {
 				queue.Add(key)
