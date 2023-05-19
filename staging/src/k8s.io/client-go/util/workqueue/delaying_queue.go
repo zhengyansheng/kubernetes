@@ -62,7 +62,7 @@ func newDelayingQueue(clock clock.WithTicker, q Interface, name string) *delayin
 	ret := &delayingType{
 		Interface:       q,
 		clock:           clock,
-		heartbeat:       clock.NewTicker(maxWait),
+		heartbeat:       clock.NewTicker(maxWait), // 10 * time.Second
 		stopCh:          make(chan struct{}),
 		waitingForAddCh: make(chan *waitFor, 1000),
 		metrics:         newRetryMetrics(name),
@@ -118,6 +118,8 @@ type waitForPriorityQueue []*waitFor
 func (pq waitForPriorityQueue) Len() int {
 	return len(pq)
 }
+
+// Less 按 readyAt 字段排序添加到优先级队列中
 func (pq waitForPriorityQueue) Less(i, j int) bool {
 	return pq[i].readyAt.Before(pq[j].readyAt)
 }
@@ -181,6 +183,7 @@ func (q *delayingType) AddAfter(item interface{}, duration time.Duration) {
 	select {
 	case <-q.stopCh:
 		// unblock if ShutDown() is called
+		// readyAt 就绪时间
 	case q.waitingForAddCh <- &waitFor{data: item, readyAt: q.clock.Now().Add(duration)}:
 	}
 }
@@ -200,6 +203,7 @@ func (q *delayingType) waitingLoop() {
 	// Make a timer that expires when the item at the head of the waiting queue is ready
 	var nextReadyAtTimer clock.Timer
 
+	// 时间未到的会放入到 waitingForAddCh 中
 	waitingForQueue := &waitForPriorityQueue{}
 	heap.Init(waitingForQueue)
 
@@ -215,10 +219,12 @@ func (q *delayingType) waitingLoop() {
 		// Add ready entries
 		for waitingForQueue.Len() > 0 {
 			entry := waitingForQueue.Peek().(*waitFor)
+			// 通过比较readAt 和 now 的大小，来判断是否已经到了添加的时间
 			if entry.readyAt.After(now) {
 				break
 			}
 
+			// 堆
 			entry = heap.Pop(waitingForQueue).(*waitFor)
 			q.Add(entry.data)
 			delete(waitingEntryByData, entry.data)
@@ -252,13 +258,16 @@ func (q *delayingType) waitingLoop() {
 				q.Add(waitEntry.data)
 			}
 
-			drained := false
+			// drained is true if the queue is empty
+			drained := false // // 取出chan中所有的元素，default当chan中没有数据就会立刻停止
 			for !drained {
 				select {
 				case waitEntry := <-q.waitingForAddCh:
 					if waitEntry.readyAt.After(q.clock.Now()) {
+						// 时间未到，放入到优先级队列中
 						insert(waitingForQueue, waitingEntryByData, waitEntry)
 					} else {
+						// 时间到，放入到通用队列中
 						q.Add(waitEntry.data)
 					}
 				default:

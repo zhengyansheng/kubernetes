@@ -117,8 +117,8 @@ func main() {
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-ch
-		klog.Info("Received termination, signaling shutdown")
-		cancel()
+		klog.Info("Received termination, signaling shutdown") // ctrl + c
+		cancel()                                              // TODO:
 	}()
 
 	// we use the Lease lock type since edits to Leases are less common
@@ -131,7 +131,7 @@ func main() {
 			Namespace: leaseLockNamespace,
 		},
 		// reset client
-		Client: client.CoordinationV1(),
+		Client: client.CoordinationV1(), // client-go clientSet -> apiServer
 		// 锁的配置
 		LockConfig: resourcelock.ResourceLockConfig{
 			Identity: id, // 指定持有者的身份标识

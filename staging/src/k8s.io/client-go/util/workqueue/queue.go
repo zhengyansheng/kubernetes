@@ -89,7 +89,7 @@ type Type struct {
 	cond *sync.Cond
 
 	shuttingDown bool // 标记当前channel是否正在被关闭
-	drain        bool
+	drain        bool // 排空，队列为空
 
 	metrics queueMetrics
 

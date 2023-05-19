@@ -205,7 +205,7 @@ func (le *LeaderElector) Run(ctx context.Context) {
 		le.config.Callbacks.OnStoppedLeading()
 	}()
 
-	// 持续获取锁， 直到 获取锁成功 或者 ctx 被取消
+	// 持续获取锁， 直到 获取锁成功 或者 ctx 被取消 wait
 	if !le.acquire(ctx) {
 		return // ctx signalled done
 	}
@@ -383,6 +383,7 @@ func (le *LeaderElector) tryAcquireOrRenew(ctx context.Context) bool {
 	klog.Infof("holder identity: %v, is leader: %v", oldLeaderElectionRecord.HolderIdentity, le.IsLeader())
 	klog.Infof("observedTime: %v, now time: %v", le.observedTime.Add(le.config.LeaseDuration), now.Time)
 	if len(oldLeaderElectionRecord.HolderIdentity) > 0 &&
+		// TODO: xxx
 		le.observedTime.Add(le.config.LeaseDuration).After(now.Time) &&
 		!le.IsLeader() {
 		klog.V(4).Infof("lock is held by %v and has not yet expired", oldLeaderElectionRecord.HolderIdentity)
