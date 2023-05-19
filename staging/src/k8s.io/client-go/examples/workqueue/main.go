@@ -144,7 +144,7 @@ func (c *Controller) runWorker() {
 	}
 }
 
-func main() {
+func main1() {
 	var kubeconfig string
 	var master string
 
@@ -227,4 +227,32 @@ func main() {
 
 	// Wait forever
 	select {}
+}
+
+func main() {
+	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+
+	queue.Add("one")
+	queue.Add("two")
+
+	// 非阻塞
+	fmt.Println(queue.Get())
+	fmt.Println(queue.Get())
+
+	go func() {
+		for i := 1; i < 5; i++ {
+			// 限速添加 call .When() to add an item to the queue with a delay
+			queue.AddRateLimited(i)
+		}
+		fmt.Println("add rate limited done")
+	}()
+	for {
+		item, shutdown := queue.Get()
+		if shutdown {
+			return
+		}
+		//_ = item
+		fmt.Println(time.Now(), item)
+	}
+
 }

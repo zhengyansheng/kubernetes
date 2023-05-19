@@ -17,6 +17,7 @@ limitations under the License.
 package workqueue
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -40,7 +41,7 @@ func DefaultControllerRateLimiter() RateLimiter {
 	return NewMaxOfRateLimiter(
 		NewItemExponentialFailureRateLimiter(5*time.Millisecond, 1000*time.Second),
 		// 10 qps, 100 bucket size.  This is only for retry speed and its only the overall factor (not per item)
-		&BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+		&BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)}, // 令牌桶
 	)
 }
 
@@ -65,11 +66,10 @@ func (r *BucketRateLimiter) Forget(item interface{}) {
 // ItemExponentialFailureRateLimiter does a simple baseDelay*2^<num-failures> limit
 // dealing with max failures and expiration are up to the caller
 type ItemExponentialFailureRateLimiter struct {
-	failuresLock sync.Mutex
-	failures     map[interface{}]int
-
-	baseDelay time.Duration
-	maxDelay  time.Duration
+	failuresLock sync.Mutex          // 锁
+	failures     map[interface{}]int // 失败次数
+	baseDelay    time.Duration       // 基础延迟
+	maxDelay     time.Duration       // 最大延迟
 }
 
 var _ RateLimiter = &ItemExponentialFailureRateLimiter{}
@@ -86,23 +86,31 @@ func DefaultItemBasedRateLimiter() RateLimiter {
 	return NewItemExponentialFailureRateLimiter(time.Millisecond, 1000*time.Second)
 }
 
+// When 计算延迟的时间
 func (r *ItemExponentialFailureRateLimiter) When(item interface{}) time.Duration {
 	r.failuresLock.Lock()
 	defer r.failuresLock.Unlock()
 
+	// 失败次数+1
 	exp := r.failures[item]
 	r.failures[item] = r.failures[item] + 1
 
 	// The backoff is capped such that 'calculated' value never overflows.
+	// backoff -> baseDelay * baseDelay*2^<num-failures>
+	// NewItemExponentialFailureRateLimiter(5*time.Millisecond, 1000*time.Second),
+	// 5ms * 2^<num-failures>
 	backoff := float64(r.baseDelay.Nanoseconds()) * math.Pow(2, float64(exp))
+	// 如果遇到溢出，我们必须将回退限制在maxDelay
 	if backoff > math.MaxInt64 {
 		return r.maxDelay
 	}
 
+	// 如果计算的值比最大值大，我们必须将回退限制在maxDelay，否则返回计算的值
 	calculated := time.Duration(backoff)
 	if calculated > r.maxDelay {
 		return r.maxDelay
 	}
+	fmt.Printf("%v, ", calculated)
 
 	return calculated
 }
@@ -176,6 +184,7 @@ type MaxOfRateLimiter struct {
 	limiters []RateLimiter
 }
 
+// When calls every RateLimiter and returns the worst case response
 func (r *MaxOfRateLimiter) When(item interface{}) time.Duration {
 	ret := time.Duration(0)
 	for _, limiter := range r.limiters {
