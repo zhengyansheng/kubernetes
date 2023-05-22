@@ -279,6 +279,7 @@ func (f *DeltaFIFO) HasSynced() bool {
 }
 
 func (f *DeltaFIFO) hasSynced_locked() bool {
+	// populated 被设置为true 当第一次调用 Add/Update/Delete/AddIfNotPresent 或者第一批通过 Replace() 插入的items被弹出。populated 永远不会被重置为false。
 	return f.populated && f.initialPopulationCount == 0
 }
 
@@ -592,6 +593,7 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 	// list 是api server中的对象
 	f.lock.Lock()
 	defer f.lock.Unlock()
+
 	keys := make(sets.String, len(list))
 
 	// keep backwards compat for old clients
@@ -683,7 +685,7 @@ func (f *DeltaFIFO) Resync() error {
 		return nil
 	}
 
-	keys := f.knownObjects.ListKeys() // 从queue中获取所有的keys
+	keys := f.knownObjects.ListKeys() // indexer中的对象
 	for _, k := range keys {
 		if err := f.syncKeyLocked(k); err != nil {
 			return err

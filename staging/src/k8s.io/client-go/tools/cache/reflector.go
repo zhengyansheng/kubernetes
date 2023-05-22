@@ -292,8 +292,7 @@ var (
 	errorStopRequested = errors.New("stop requested")
 )
 
-// resyncChan returns a channel which will receive something when a resync is
-// required, and a cleanup function.
+// resyncChan returns a channel which will receive something when a resync is required, and a cleanup function.
 func (r *Reflector) resyncChan() (<-chan time.Time, func() bool) {
 	if r.resyncPeriod == 0 {
 		return neverExitWatch, func() bool { return false }
@@ -324,6 +323,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 	resyncerrc := make(chan error, 1)
 	cancelCh := make(chan struct{})
 	defer close(cancelCh)
+	klog.Info("start list and watch")
 	go func() {
 		resyncCh, cleanup := r.resyncChan()
 		defer func() {
@@ -344,6 +344,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 					return
 				}
 			}
+			klog.Info("sync to delta fifo from indexer")
 			cleanup()
 			resyncCh, cleanup = r.resyncChan()
 		}
@@ -367,6 +368,10 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			// To reduce load on kube-apiserver on watch restarts, you may enable watch bookmarks.
 			// Reflector doesn't assume bookmarks are returned at all (if the server do not support
 			// watch bookmarks, it will ignore this field).
+
+			// If watch bookmarks are enabled and supported by the server, Reflector will use the last seen resource version as the bookmark.
+			// Otherwise, it will use the last synced resource version.
+			// If you enable watch bookmarks, you must also ensure the LastSyncResourceVersion is persisted
 			AllowWatchBookmarks: true,
 		}
 
@@ -526,6 +531,7 @@ func (r *Reflector) syncWith(items []runtime.Object, resourceVersion string) err
 	for _, item := range items {
 		found = append(found, item)
 	}
+	// store: DeltaFIFO
 	return r.store.Replace(found, resourceVersion)
 }
 
@@ -574,14 +580,18 @@ loop:
 					continue
 				}
 			}
+			// Accessor 反射获取对象的元数据meta
 			meta, err := meta.Accessor(event.Object)
 			if err != nil {
 				utilruntime.HandleError(fmt.Errorf("%s: unable to understand watch event %#v", name, event))
 				continue
 			}
+			// resourceVersion 获取当前对象的资源版本号
 			resourceVersion := meta.GetResourceVersion()
+
 			switch event.Type {
 			case watch.Added:
+				// store: DeltaFIFO
 				err := store.Add(event.Object)
 				if err != nil {
 					utilruntime.HandleError(fmt.Errorf("%s: unable to add watch event object (%#v) to store: %v", name, event.Object, err))
@@ -599,11 +609,14 @@ loop:
 				if err != nil {
 					utilruntime.HandleError(fmt.Errorf("%s: unable to delete watch event object (%#v) from store: %v", name, event.Object, err))
 				}
+
 			case watch.Bookmark:
 				// A `Bookmark` means watch has synced here, just update the resourceVersion
 			default:
 				utilruntime.HandleError(fmt.Errorf("%s: unable to understand watch event %#v", name, event))
 			}
+
+			// 更新资源版本号
 			setLastSyncResourceVersion(resourceVersion)
 			if rvu, ok := store.(ResourceVersionUpdater); ok {
 				rvu.UpdateResourceVersion(resourceVersion)

@@ -146,10 +146,11 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 	}()
 
 	// 实例化 Reflector
+	// controller.newInformer()
 	r := NewReflectorWithOptions(
 		c.config.ListerWatcher,
 		c.config.ObjectType,
-		c.config.Queue,
+		c.config.Queue, // DeltaFIFO
 		ReflectorOptions{
 			ResyncPeriod:    c.config.FullResyncPeriod,
 			TypeDescription: c.config.ObjectDescription,

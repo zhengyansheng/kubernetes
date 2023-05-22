@@ -144,7 +144,7 @@ func (c *Controller) runWorker() {
 	}
 }
 
-func main1() {
+func main() {
 	var kubeconfig string
 	var master string
 
@@ -176,7 +176,7 @@ func main1() {
 	// Note that when we finally process the item from the workqueue, we might see a newer version
 	// of the Pod than the version which was responsible for triggering the update.
 	// NewIndexerInformer 这个地方是创建一个informer，这个informer会去监听podListWatcher，当podListWatcher发生变化时，会将变化的pod放入队列
-	indexer, informer := cache.NewIndexerInformer(podListWatcher, &v1.Pod{}, 0, cache.ResourceEventHandlerFuncs{
+	indexer, informer := cache.NewIndexerInformer(podListWatcher, &v1.Pod{}, time.Second*5, cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			// obj 是一个pod对象，这里的key是namespace/name
 			key, err := cache.MetaNamespaceKeyFunc(obj)
@@ -229,7 +229,7 @@ func main1() {
 	select {}
 }
 
-func main() {
+func main2() {
 	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 
 	queue.Add("one")
