@@ -115,7 +115,7 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		Recorder:   dc.eventRecorder,
 	}
 
-	// deployment/ replicaset/ pod 添加资源事件
+	// deployment/ replicaset/ pod 添加事件回调函数
 	dInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dc.addDeployment,
 		UpdateFunc: dc.updateDeployment,
@@ -132,10 +132,13 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		DeleteFunc: dc.deletePod,
 	})
 
-	dc.syncHandler = dc.syncDeployment // 同步 deployment
-	dc.enqueueDeployment = dc.enqueue  // 入队 workqueue
+	// 同步 deployment，很重要
+	dc.syncHandler = dc.syncDeployment
 
-	// deployment/ replicaset/ pod 获取 indexInformer
+	// 入队 workqueue (rate limiter)
+	dc.enqueueDeployment = dc.enqueue
+
+	// deployment/ replicaset/ pod 获取 indexInformer, list all resources
 	dc.dLister = dInformer.Lister()
 	dc.rsLister = rsInformer.Lister()
 	// podLister: List lists all Pods in the indexer.
@@ -145,6 +148,7 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 	dc.dListerSynced = dInformer.Informer().HasSynced
 	dc.rsListerSynced = rsInformer.Informer().HasSynced
 	dc.podListerSynced = podInformer.Informer().HasSynced
+
 	return dc, nil
 }
 
@@ -495,6 +499,7 @@ func (dc *DeploymentController) processNextWorkItem(ctx context.Context) bool {
 	}
 	defer dc.queue.Done(key)
 
+	//dc.syncDeployment(ctx, key.(string))
 	err := dc.syncHandler(ctx, key.(string))
 	dc.handleErr(err, key)
 

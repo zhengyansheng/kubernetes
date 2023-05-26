@@ -270,8 +270,8 @@ func (f *DeltaFIFO) KeyOf(obj interface{}) (string, error) {
 
 // HasSynced returns true if an Add/Update/Delete/AddIfNotPresent are called first,
 // or the first batch of items inserted by Replace() has been popped.
-// HasSynced: 如果 Add/Update/Delete/AddIfNotPresent 被调用 返回true
-// 或者
+// HasSynced: 如果 首先调用 Add/Update/Delete/AddIfNotPresent 则 返回true
+// 或者 第一批通过 Replace() 插入的items 被弹出 则 返回true
 func (f *DeltaFIFO) HasSynced() bool {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -280,6 +280,7 @@ func (f *DeltaFIFO) HasSynced() bool {
 
 func (f *DeltaFIFO) hasSynced_locked() bool {
 	// populated 被设置为true 当第一次调用 Add/Update/Delete/AddIfNotPresent 或者第一批通过 Replace() 插入的items被弹出。populated 永远不会被重置为false。
+	// initialPopulationCount 初始化PopulationCount 用于跟踪第一批通过 Replace() 插入的items 被弹出的数量。
 	return f.populated && f.initialPopulationCount == 0
 }
 
@@ -527,7 +528,7 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 	for {
-		for len(f.queue) == 0 { // for 为什么不是if
+		for len(f.queue) == 0 { // for 为什么不是 if
 			// When the queue is empty, invocation of Pop() is blocked until new item is enqueued.
 			// When Close() is called, the f.closed is set and the condition is broadcasted.
 			// Which causes this loop to continue and return from the Pop().
