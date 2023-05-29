@@ -115,7 +115,7 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		Recorder:   dc.eventRecorder,
 	}
 
-	// deployment/ replicaset/ pod 添加事件回调函数
+	// deploymentInformer/ replicasetInformer/ podInformer 添加事件回调函数
 	dInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dc.addDeployment,
 		UpdateFunc: dc.updateDeployment,
@@ -492,7 +492,7 @@ func (dc *DeploymentController) worker(ctx context.Context) {
 }
 
 func (dc *DeploymentController) processNextWorkItem(ctx context.Context) bool {
-	// key: default/pod1
+	// key: default/deployment1
 	key, quit := dc.queue.Get() // Get -> Pop()
 	if quit {
 		return false
@@ -611,7 +611,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		klog.V(4).InfoS("Finished syncing deployment", "deployment", klog.KRef(namespace, name), "duration", time.Since(startTime))
 	}()
 
-	// 获取 deployment 对象
+	// shareInformer 获取 deployment 对象
 	deployment, err := dc.dLister.Deployments(namespace).Get(name)
 	if errors.IsNotFound(err) {
 		klog.V(2).InfoS("Deployment has been deleted", "deployment", klog.KRef(namespace, name))
