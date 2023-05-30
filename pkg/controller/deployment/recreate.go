@@ -34,6 +34,7 @@ func (dc *DeploymentController) rolloutRecreate(ctx context.Context, d *apps.Dep
 		return err
 	}
 	allRSs := append(oldRSs, newRS)
+	// activeOldRSs -> Rs.Spec.Replicas > 0
 	activeOldRSs := controller.FilterActiveReplicaSets(oldRSs)
 
 	// scale down old replica sets.
@@ -65,7 +66,9 @@ func (dc *DeploymentController) rolloutRecreate(ctx context.Context, d *apps.Dep
 		return err
 	}
 
+	// 检查 deployment.status.(UpdatedReplicas,Replicas,AvailableReplicas) 是否等于 deployment 副本数
 	if util.DeploymentComplete(d, &d.Status) {
+		// 清理工作，负责保留最近的N个rs
 		if err := dc.cleanupDeployment(ctx, oldRSs, d); err != nil {
 			return err
 		}
@@ -128,6 +131,7 @@ func oldPodsRunning(newRS *apps.ReplicaSet, oldRSs []*apps.ReplicaSet, podMap ma
 
 // scaleUpNewReplicaSetForRecreate scales up new replica set when deployment strategy is "Recreate".
 func (dc *DeploymentController) scaleUpNewReplicaSetForRecreate(ctx context.Context, newRS *apps.ReplicaSet, deployment *apps.Deployment) (bool, error) {
+	// rs object, deployment replicas, deployment object
 	scaled, _, err := dc.scaleReplicaSetAndRecordEvent(ctx, newRS, *(deployment.Spec.Replicas), deployment)
 	return scaled, err
 }

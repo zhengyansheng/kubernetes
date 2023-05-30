@@ -395,21 +395,26 @@ func (dc *DeploymentController) scale(ctx context.Context, deployment *apps.Depl
 
 func (dc *DeploymentController) scaleReplicaSetAndRecordEvent(ctx context.Context, rs *apps.ReplicaSet, newScale int32, deployment *apps.Deployment) (bool, *apps.ReplicaSet, error) {
 	// No need to scale
+	// 如果当前的副本数已经是要求的副本数，则不需要进行扩缩容操作
 	if *(rs.Spec.Replicas) == newScale {
 		return false, rs, nil
 	}
 	var scalingOperation string
+	// 如果当前的副本数小于要求的副本数，则进行扩容操作， 否则进行缩容操作
 	if *(rs.Spec.Replicas) < newScale {
 		scalingOperation = "up"
 	} else {
 		scalingOperation = "down"
 	}
+	// 进行扩缩容操作
 	scaled, newRS, err := dc.scaleReplicaSet(ctx, rs, newScale, deployment, scalingOperation)
+
 	return scaled, newRS, err
 }
 
 func (dc *DeploymentController) scaleReplicaSet(ctx context.Context, rs *apps.ReplicaSet, newScale int32, deployment *apps.Deployment, scalingOperation string) (bool, *apps.ReplicaSet, error) {
 
+	// 如果相等理论上不会进入这个方法 true
 	sizeNeedsUpdate := *(rs.Spec.Replicas) != newScale
 
 	annotationsNeedUpdate := deploymentutil.ReplicasAnnotationsNeedUpdate(rs, *(deployment.Spec.Replicas), *(deployment.Spec.Replicas)+deploymentutil.MaxSurge(*deployment))
@@ -418,9 +423,11 @@ func (dc *DeploymentController) scaleReplicaSet(ctx context.Context, rs *apps.Re
 	var err error
 	if sizeNeedsUpdate || annotationsNeedUpdate {
 		oldScale := *(rs.Spec.Replicas)
+		// 更新replicas， 以及replicas的注解
 		rsCopy := rs.DeepCopy()
 		*(rsCopy.Spec.Replicas) = newScale
 		deploymentutil.SetReplicasAnnotations(rsCopy, *(deployment.Spec.Replicas), *(deployment.Spec.Replicas)+deploymentutil.MaxSurge(*deployment))
+		// 进行扩缩容操作
 		rs, err = dc.client.AppsV1().ReplicaSets(rsCopy.Namespace).Update(ctx, rsCopy, metav1.UpdateOptions{})
 		if err == nil && sizeNeedsUpdate {
 			scaled = true
@@ -430,9 +437,10 @@ func (dc *DeploymentController) scaleReplicaSet(ctx context.Context, rs *apps.Re
 	return scaled, rs, err
 }
 
-// cleanupDeployment is responsible for cleaning up a deployment ie. retains all but the latest N old replica sets
-// where N=d.Spec.RevisionHistoryLimit. Old replica sets are older versions of the podtemplate of a deployment kept
-// around by default 1) for historical reasons and 2) for the ability to rollback a deployment.
+// cleanupDeployment is responsible for cleaning up a deployment ie.
+// retains all but the latest N old replica sets where N=d.Spec.RevisionHistoryLimit.
+// Old replica sets are older versions of the podtemplate of a deployment kept around by default 1) for historical reasons and 2) for the ability to rollback a deployment.
+// cleanupDeployment 负责清理工作，只保留最近的N个旧的副本集，N=d.Spec.RevisionHistoryLimit，有2点原因，1）历史原因，2）回滚操作
 func (dc *DeploymentController) cleanupDeployment(ctx context.Context, oldRSs []*apps.ReplicaSet, deployment *apps.Deployment) error {
 	if !deploymentutil.HasRevisionHistoryLimit(deployment) {
 		return nil
