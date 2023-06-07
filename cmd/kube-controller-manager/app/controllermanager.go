@@ -235,7 +235,8 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 		}
 		// 初始化 controller
 		controllerInitializers := initializersFunc(controllerContext.LoopMode)
-		// 启动 所有 controllers
+
+		// 启动 所有 controllers (controllerContext)
 		if err := StartControllers(ctx, controllerContext, startSATokenController, controllerInitializers, unsecuredMux, healthzHandler); err != nil {
 			klog.Fatalf("error starting controllers: %v", err)
 		}

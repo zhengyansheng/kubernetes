@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -83,7 +84,15 @@ func (c *Controller) syncToStdout(key string) error {
 	} else {
 		// Note that you also have to check the uid if you have a local controlled resource, which
 		// is dependent on the actual instance, to detect that a Pod was recreated with the same name
-		fmt.Printf("Sync/Add/Update for Pod %s\n", obj.(*v1.Pod).GetName())
+		//fmt.Printf("Sync/Add/Update for Pod %s\n", obj.(*v1.Event).GetName())
+		e := obj.(*v1.Event)
+		fmt.Println(e.Name)
+		var eventName string
+		if ok := strings.Contains(e.Name, "."); ok {
+			eventName = strings.Split(e.Name, ".")[0]
+		}
+		// Type     Reason   Age                      From     Message
+		fmt.Println(eventName, e.Namespace, e.Type, e.Reason, e.CreationTimestamp, e.Message)
 	}
 	return nil
 }
@@ -144,7 +153,7 @@ func (c *Controller) runWorker() {
 	}
 }
 
-func main() {
+func main1() {
 	var kubeconfig string
 	var master string
 
@@ -177,6 +186,91 @@ func main() {
 	// of the Pod than the version which was responsible for triggering the update.
 	// NewIndexerInformer 这个地方是创建一个informer，这个informer会去监听podListWatcher，当podListWatcher发生变化时，会将变化的pod放入队列
 	indexer, informer := cache.NewIndexerInformer(podListWatcher, &v1.Pod{}, time.Second*5, cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			// obj 是一个pod对象，这里的key是namespace/name
+			key, err := cache.MetaNamespaceKeyFunc(obj)
+			if err == nil {
+				// 将key放入队列
+				queue.Add(key)
+			}
+		},
+		UpdateFunc: func(old interface{}, new interface{}) {
+			// 同 AddFunc
+			key, err := cache.MetaNamespaceKeyFunc(new)
+			if err == nil {
+				queue.Add(key)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			// IndexerInformer uses a delta queue, therefore for deletes we have to use this key function.
+			// DeletionHandlingMetaNamespaceKeyFunc is a wrapper around MetaNamespaceKeyFunc which handles
+			key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+			if err == nil {
+				queue.Add(key)
+			}
+		},
+	}, cache.Indexers{})
+
+	/*
+		queue: RateLimitingQueue
+		indexer: 在map的基础上封装了一些方法
+		informer: Controller interface
+	*/
+	controller := NewController(queue, indexer, informer)
+
+	//// We can now warm up the cache for initial synchronization.
+	//// Let's suppose that we knew about a pod "mypod" on our last run, therefore add it to the cache.
+	//// If this pod is not there anymore, the controller will be notified about the removal after the
+	//// cache has synchronized.
+	//indexer.Add(&v1.Pod{
+	//	ObjectMeta: meta_v1.ObjectMeta{
+	//		Name:      "mypod",
+	//		Namespace: v1.NamespaceDefault,
+	//	},
+	//})
+
+	// Now let's start the controller
+	stop := make(chan struct{})
+	defer close(stop)
+	go controller.Run(1, stop)
+
+	// Wait forever
+	select {}
+}
+
+func main() {
+	var kubeconfig string
+	var master string
+
+	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
+	flag.StringVar(&master, "master", "", "master url")
+	flag.Parse()
+
+	// creates the connection
+	config, err := clientcmd.BuildConfigFromFlags(master, kubeconfig)
+	if err != nil {
+		klog.Fatal(err)
+	}
+
+	// creates the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		klog.Fatal(err)
+	}
+
+	// create the pod watcher
+	eventListWatcher := cache.NewListWatchFromClient(clientset.CoreV1().RESTClient(), "events", v1.NamespaceDefault, fields.Everything())
+
+	// create the workqueue
+	// 创建一个队列，用于存放需要处理的pod的key workqueue.RateLimitingInterface是一个接口，实现了Add,Done,Forget,NumRequeues方法
+	queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+
+	// Bind the workqueue to a cache with the help of an informer. This way we make sure that
+	// whenever the cache is updated, the pod key is added to the workqueue.
+	// Note that when we finally process the item from the workqueue, we might see a newer version
+	// of the Pod than the version which was responsible for triggering the update.
+	// NewIndexerInformer 这个地方是创建一个informer，这个informer会去监听podListWatcher，当podListWatcher发生变化时，会将变化的pod放入队列
+	indexer, informer := cache.NewIndexerInformer(eventListWatcher, &v1.Event{}, 0, cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			// obj 是一个pod对象，这里的key是namespace/name
 			key, err := cache.MetaNamespaceKeyFunc(obj)

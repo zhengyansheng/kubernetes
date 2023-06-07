@@ -51,6 +51,7 @@ func (dc *DeploymentController) sync(ctx context.Context, d *apps.Deployment, rs
 	if err != nil {
 		return err
 	}
+	// TODO: scale 这个逻辑看着挺复杂的？？？
 	if err := dc.scale(ctx, d, newRS, oldRSs); err != nil {
 		// If we get an error while trying to scale, the deployment will be requeued
 		// so we can abort this resync
@@ -114,6 +115,7 @@ func (dc *DeploymentController) checkPausedConditions(ctx context.Context, d *ap
 // Note that currently the deployment controller is using caches to avoid querying the server for reads.
 // This may lead to stale reads of replica sets, thus incorrect deployment status.
 func (dc *DeploymentController) getAllReplicaSetsAndSyncRevision(ctx context.Context, d *apps.Deployment, rsList []*apps.ReplicaSet, createIfNotExisted bool) (*apps.ReplicaSet, []*apps.ReplicaSet, error) {
+	// 过滤掉当前deployment的rs
 	_, allOldRSs := deploymentutil.FindOldReplicaSets(d, rsList)
 
 	// Get new replica set with the updated revision number
@@ -384,6 +386,7 @@ func (dc *DeploymentController) scale(ctx context.Context, deployment *apps.Depl
 			}
 
 			// TODO: Use transactions when we have them.
+			// 核心
 			if _, _, err := dc.scaleReplicaSet(ctx, rs, nameToSize[rs.Name], deployment, scalingOperation); err != nil {
 				// Return as soon as we fail, the deployment is requeued
 				return err
@@ -427,7 +430,7 @@ func (dc *DeploymentController) scaleReplicaSet(ctx context.Context, rs *apps.Re
 		rsCopy := rs.DeepCopy()
 		*(rsCopy.Spec.Replicas) = newScale
 		deploymentutil.SetReplicasAnnotations(rsCopy, *(deployment.Spec.Replicas), *(deployment.Spec.Replicas)+deploymentutil.MaxSurge(*deployment))
-		// 进行扩缩容操作
+		// 进行扩缩容操作 *****
 		rs, err = dc.client.AppsV1().ReplicaSets(rsCopy.Namespace).Update(ctx, rsCopy, metav1.UpdateOptions{})
 		if err == nil && sizeNeedsUpdate {
 			scaled = true
@@ -535,17 +538,29 @@ func calculateStatus(allRSs []*apps.ReplicaSet, newRS *apps.ReplicaSet, deployme
 //
 // rsList should come from getReplicaSetsForDeployment(d).
 func (dc *DeploymentController) isScalingEvent(ctx context.Context, d *apps.Deployment, rsList []*apps.ReplicaSet) (bool, error) {
+	/* 	describe
+	OldReplicaSets:
+	NewReplicaSet:
+	*/
 	newRS, oldRSs, err := dc.getAllReplicaSetsAndSyncRevision(ctx, d, rsList, false)
 	if err != nil {
 		return false, err
 	}
 	allRSs := append(oldRSs, newRS)
+
 	// FilterActiveReplicaSets 过滤 rs 中有pod的 rs 数组
+	// 以下看的是rs 而非deployment
+	/*
+		allRSs 一个deployment关联的所有rs中，只保留rs的副本数大于0的
+	*/
 	for _, rs := range controller.FilterActiveReplicaSets(allRSs) {
+		// controller.FilterActiveReplicaSets rs非0的直接过滤掉了
+		// Annotations key: "deployment.kubernetes.io/desired-replicas"
 		desired, ok := deploymentutil.GetDesiredReplicasAnnotation(rs)
 		if !ok {
 			continue
 		}
+		// 如果不相等则 返回true,nil
 		if desired != *(d.Spec.Replicas) {
 			return true, nil
 		}

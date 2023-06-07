@@ -377,13 +377,14 @@ func FindActiveOrLatest(newRS *apps.ReplicaSet, oldRSs []*apps.ReplicaSet) *apps
 
 // GetDesiredReplicasAnnotation returns the number of desired replicas
 func GetDesiredReplicasAnnotation(rs *apps.ReplicaSet) (int32, bool) {
-	return getIntFromAnnotation(rs, DesiredReplicasAnnotation)
+	return getIntFromAnnotation(rs, DesiredReplicasAnnotation) // DesiredReplicasAnnotation -> "deployment.kubernetes.io/desired-replicas"
 }
 
 func getMaxReplicasAnnotation(rs *apps.ReplicaSet) (int32, bool) {
 	return getIntFromAnnotation(rs, MaxReplicasAnnotation)
 }
 
+// 从注解Annotations中拿到key(deployment.kubernetes.io/desired-replicas)对应的值，如果拿不到那就是0，false
 func getIntFromAnnotation(rs *apps.ReplicaSet, annotationKey string) (int32, bool) {
 	annotationValue, ok := rs.Annotations[annotationKey]
 	if !ok {
@@ -610,7 +611,9 @@ func EqualIgnoreHash(template1, template2 *v1.PodTemplateSpec) bool {
 
 // FindNewReplicaSet returns the new RS this given deployment targets (the one with the same pod template).
 func FindNewReplicaSet(deployment *apps.Deployment, rsList []*apps.ReplicaSet) *apps.ReplicaSet {
+	// 按照rs的创建时间排序，最早创建的在前面
 	sort.Sort(controller.ReplicaSetsByCreationTimestamp(rsList))
+
 	for i := range rsList {
 		if EqualIgnoreHash(&rsList[i].Spec.Template, &deployment.Spec.Template) {
 			// In rare cases, such as after cluster upgrades, Deployment may end up with
@@ -640,6 +643,8 @@ func FindOldReplicaSets(deployment *apps.Deployment, rsList []*apps.ReplicaSet) 
 			requiredRSs = append(requiredRSs, rs)
 		}
 	}
+	// allRSs: all old replica sets
+	// requiredRSs: 只包含有pod的 replica sets
 	return requiredRSs, allRSs
 }
 
