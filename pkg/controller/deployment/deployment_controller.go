@@ -25,9 +25,9 @@ import (
 	"fmt"
 	"reflect"
 	"time"
-
+	
 	"k8s.io/klog/v2"
-
+	
 	apps "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -68,22 +68,22 @@ type DeploymentController struct {
 	// rsControl is used for adopting/releasing replica sets.
 	rsControl controller.RSControlInterface
 	client    clientset.Interface
-
+	
 	eventBroadcaster record.EventBroadcaster
 	eventRecorder    record.EventRecorder
-
+	
 	// To allow injection of syncDeployment for testing.
 	syncHandler func(ctx context.Context, dKey string) error
 	// used for unit testing
 	enqueueDeployment func(deployment *apps.Deployment)
-
+	
 	// dLister can list/get deployments from the shared informer's store
 	dLister appslisters.DeploymentLister
 	// rsLister can list/get replica sets from the shared informer's store
 	rsLister appslisters.ReplicaSetLister
 	// podLister can list/get pods from the shared informer's store
 	podLister corelisters.PodLister
-
+	
 	// dListerSynced returns true if the Deployment store has been synced at least once.
 	// Added as a member to the struct to allow injection for testing.
 	dListerSynced cache.InformerSynced
@@ -93,18 +93,23 @@ type DeploymentController struct {
 	// podListerSynced returns true if the pod store has been synced at least once.
 	// Added as a member to the struct to allow injection for testing.
 	podListerSynced cache.InformerSynced
-
+	
 	// Deployments that need to be synced
 	// RateLimiting 限速队列
 	queue workqueue.RateLimitingInterface
 }
 
 // NewDeploymentController creates a new DeploymentController.
-func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInformer appsinformers.ReplicaSetInformer, podInformer coreinformers.PodInformer, client clientset.Interface) (*DeploymentController, error) {
+func NewDeploymentController(
+	dInformer appsinformers.DeploymentInformer,
+	rsInformer appsinformers.ReplicaSetInformer,
+	podInformer coreinformers.PodInformer,
+	client clientset.Interface) (*DeploymentController, error) {
+	
 	eventBroadcaster := record.NewBroadcaster()
-
+	
 	dc := &DeploymentController{
-		client:           client,
+		client:           client, // client-go client-> api-server
 		eventBroadcaster: eventBroadcaster,
 		eventRecorder:    eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "deployment-controller"}),
 		// queue -> workqueue 限速队列
@@ -114,7 +119,7 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		KubeClient: client,
 		Recorder:   dc.eventRecorder,
 	}
-
+	
 	// deploymentInformer/ replicasetInformer/ podInformer 添加事件回调函数
 	dInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    dc.addDeployment,
@@ -128,55 +133,56 @@ func NewDeploymentController(dInformer appsinformers.DeploymentInformer, rsInfor
 		DeleteFunc: dc.deleteReplicaSet,
 	})
 	// podInformer: PodInformer provides access to a shared informer and lister for pods
+	// TODO: AddFunc?
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		DeleteFunc: dc.deletePod,
 	})
-
+	
 	// 同步 deployment，很重要
 	dc.syncHandler = dc.syncDeployment
-
+	
 	// 入队 workqueue (rate limiter)
 	dc.enqueueDeployment = dc.enqueue
-
+	
 	// deployment/ replicaset/ pod 获取 indexInformer, list all resources
 	dc.dLister = dInformer.Lister()
 	dc.rsLister = rsInformer.Lister()
 	// podLister: List lists all Pods in the indexer.
 	dc.podLister = podInformer.Lister()
-
+	
 	// 如果 shared informer 已经做过至少一次的 full LIST 全量同步 则返回true
 	dc.dListerSynced = dInformer.Informer().HasSynced
 	dc.rsListerSynced = rsInformer.Informer().HasSynced
 	dc.podListerSynced = podInformer.Informer().HasSynced
-
+	
 	return dc, nil
 }
 
 // Run begins watching and syncing.
 func (dc *DeploymentController) Run(ctx context.Context, workers int) {
 	defer utilruntime.HandleCrash()
-
+	
 	// Start events processing pipeline.
 	dc.eventBroadcaster.StartStructuredLogging(0)
 	dc.eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: dc.client.CoreV1().Events("")})
 	defer dc.eventBroadcaster.Shutdown()
-
+	
 	// 关闭 workqueue
 	defer dc.queue.ShutDown()
-
+	
 	klog.InfoS("Starting controller", "controller", "deployment")
 	defer klog.InfoS("Shutting down controller", "controller", "deployment")
-
-	// 等价于 WaitForCacheSync 等待 informer 同步完成
+	
+	// 等价于 WaitForCacheSync 等待 informer 同步完成 (-> DeltaFIFO))
 	if !cache.WaitForNamedCacheSync("deployment", ctx.Done(), dc.dListerSynced, dc.rsListerSynced, dc.podListerSynced) {
 		return
 	}
-
+	
 	for i := 0; i < workers; i++ {
 		// worker/s
 		go wait.UntilWithContext(ctx, dc.worker, time.Second)
 	}
-
+	
 	// 阻塞
 	<-ctx.Done()
 }
@@ -215,14 +221,14 @@ func (dc *DeploymentController) deleteDeployment(obj interface{}) {
 // addReplicaSet enqueues the deployment that manages a ReplicaSet when the ReplicaSet is created.
 func (dc *DeploymentController) addReplicaSet(obj interface{}) {
 	rs := obj.(*apps.ReplicaSet)
-
+	
 	if rs.DeletionTimestamp != nil {
 		// On a restart of the controller manager, it's possible for an object to
 		// show up in a state that is already pending deletion.
 		dc.deleteReplicaSet(rs)
 		return
 	}
-
+	
 	// If it has a ControllerRef, that's all that matters.
 	if controllerRef := metav1.GetControllerOf(rs); controllerRef != nil {
 		d := dc.resolveControllerRef(rs.Namespace, controllerRef)
@@ -233,7 +239,7 @@ func (dc *DeploymentController) addReplicaSet(obj interface{}) {
 		dc.enqueueDeployment(d)
 		return
 	}
-
+	
 	// Otherwise, it's an orphan. Get a list of all matching Deployments and sync
 	// them to see if anyone wants to adopt it.
 	ds := dc.getDeploymentsForReplicaSet(rs)
@@ -278,7 +284,7 @@ func (dc *DeploymentController) updateReplicaSet(old, cur interface{}) {
 		// Two different versions of the same replica set will always have different RVs.
 		return
 	}
-
+	
 	curControllerRef := metav1.GetControllerOf(curRS)
 	oldControllerRef := metav1.GetControllerOf(oldRS)
 	controllerRefChanged := !reflect.DeepEqual(curControllerRef, oldControllerRef)
@@ -288,7 +294,7 @@ func (dc *DeploymentController) updateReplicaSet(old, cur interface{}) {
 			dc.enqueueDeployment(d)
 		}
 	}
-
+	
 	// If it has a ControllerRef, that's all that matters.
 	if curControllerRef != nil {
 		d := dc.resolveControllerRef(curRS.Namespace, curControllerRef)
@@ -299,7 +305,7 @@ func (dc *DeploymentController) updateReplicaSet(old, cur interface{}) {
 		dc.enqueueDeployment(d)
 		return
 	}
-
+	
 	// Otherwise, it's an orphan. If anything changed, sync matching controllers
 	// to see if anyone wants to adopt it now.
 	labelChanged := !reflect.DeepEqual(curRS.Labels, oldRS.Labels)
@@ -320,7 +326,7 @@ func (dc *DeploymentController) updateReplicaSet(old, cur interface{}) {
 // a DeletionFinalStateUnknown marker item.
 func (dc *DeploymentController) deleteReplicaSet(obj interface{}) {
 	rs, ok := obj.(*apps.ReplicaSet)
-
+	
 	// When a delete is dropped, the relist will notice a pod in the store not
 	// in the list, leading to the insertion of a tombstone object which contains
 	// the deleted key/value. Note that this value might be stale. If the ReplicaSet
@@ -337,7 +343,7 @@ func (dc *DeploymentController) deleteReplicaSet(obj interface{}) {
 			return
 		}
 	}
-
+	
 	controllerRef := metav1.GetControllerOf(rs)
 	if controllerRef == nil {
 		// No controller should care about orphans being deleted.
@@ -355,7 +361,7 @@ func (dc *DeploymentController) deleteReplicaSet(obj interface{}) {
 func (dc *DeploymentController) deletePod(obj interface{}) {
 	// 对象断言
 	pod, ok := obj.(*v1.Pod)
-
+	
 	// When a delete is dropped, the relist will notice a pod in the store not
 	// in the list, leading to the insertion of a tombstone object which contains
 	// the deleted key/value. Note that this value might be stale. If the Pod
@@ -381,7 +387,7 @@ func (dc *DeploymentController) deletePod(obj interface{}) {
 			return
 		}
 		// 通过 deployment 和 rs 得到 pods
-		// podMap -> map[types.UID][]*v1.Pod
+		// podMap -> map[rs.UID][]*v1.Pod
 		podMap, err := dc.getPodMapForDeployment(d, rsList)
 		if err != nil {
 			return
@@ -406,7 +412,7 @@ func (dc *DeploymentController) enqueue(deployment *apps.Deployment) {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", deployment, err))
 		return
 	}
-
+	
 	// key -> queue
 	dc.queue.Add(key)
 }
@@ -417,7 +423,7 @@ func (dc *DeploymentController) enqueueRateLimited(deployment *apps.Deployment) 
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", deployment, err))
 		return
 	}
-
+	
 	dc.queue.AddRateLimited(key)
 }
 
@@ -428,7 +434,7 @@ func (dc *DeploymentController) enqueueAfter(deployment *apps.Deployment, after 
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", deployment, err))
 		return
 	}
-
+	
 	dc.queue.AddAfter(key, after)
 }
 
@@ -452,7 +458,7 @@ func (dc *DeploymentController) getDeploymentForPod(pod *v1.Pod) *apps.Deploymen
 		klog.V(4).InfoS("Cannot get replicaset for pod", "ownerReference", controllerRef.Name, "pod", klog.KObj(pod), "err", err)
 		return nil
 	}
-
+	
 	// Now find the Deployment that owns that ReplicaSet.
 	// 查找 replicas 父类
 	controllerRef = metav1.GetControllerOf(rs)
@@ -487,7 +493,7 @@ func (dc *DeploymentController) resolveControllerRef(namespace string, controlle
 // worker runs a worker thread that just dequeues items, processes them, and marks them done.
 // It enforces that the syncHandler is never invoked concurrently with the same key.
 func (dc *DeploymentController) worker(ctx context.Context) {
-	for dc.processNextWorkItem(ctx) {
+	for dc.processNextWorkItem(ctx) { // 只有队列关闭时 才会终止for
 	}
 }
 
@@ -495,36 +501,43 @@ func (dc *DeploymentController) processNextWorkItem(ctx context.Context) bool {
 	// key: default/deployment1
 	key, quit := dc.queue.Get() // Get -> Pop()
 	if quit {
+		// 队列关闭时返回 false
 		return false
 	}
 	defer dc.queue.Done(key)
-
+	
 	//dc.syncDeployment(ctx, key.(string))
 	err := dc.syncHandler(ctx, key.(string))
+	
+	// 处理 syncHandler 是否出错
 	dc.handleErr(err, key)
-
+	
 	return true
 }
 
 func (dc *DeploymentController) handleErr(err error, key interface{}) {
 	if err == nil || errors.HasStatusCause(err, v1.NamespaceTerminatingCause) {
+		// Forget 翻译为忘记
 		dc.queue.Forget(key)
 		return
 	}
-
+	
 	ns, name, keyErr := cache.SplitMetaNamespaceKey(key.(string))
 	if keyErr != nil {
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
 	}
-
-	if dc.queue.NumRequeues(key) < maxRetries {
+	
+	// 入队失败次数小于15次，可以再次入到限速队列中
+	if dc.queue.NumRequeues(key) < maxRetries { // maxRetries 15
 		klog.V(2).InfoS("Error syncing deployment", "deployment", klog.KRef(ns, name), "err", err)
 		dc.queue.AddRateLimited(key)
 		return
 	}
-
+	
 	utilruntime.HandleError(err)
 	klog.V(2).InfoS("Dropping deployment out of the queue", "deployment", klog.KRef(ns, name), "err", err)
+	
+	// 失败次数大于15次，就忘记这个key
 	dc.queue.Forget(key)
 }
 
@@ -588,6 +601,7 @@ func (dc *DeploymentController) getPodMapForDeployment(d *apps.Deployment, rsLis
 		}
 		// Only append if we care about this UID.
 		if _, ok := podMap[controllerRef.UID]; ok {
+			// controllerRef.UID -> rs.UID
 			podMap[controllerRef.UID] = append(podMap[controllerRef.UID], pod)
 		}
 	}
@@ -603,14 +617,14 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		klog.ErrorS(err, "Failed to split meta namespace cache key", "cacheKey", key)
 		return err
 	}
-
+	
 	// 计算 syncDeployment 耗时
 	startTime := time.Now()
 	klog.V(4).InfoS("Started syncing deployment", "deployment", klog.KRef(namespace, name), "startTime", startTime)
 	defer func() {
 		klog.V(4).InfoS("Finished syncing deployment", "deployment", klog.KRef(namespace, name), "duration", time.Since(startTime))
 	}()
-
+	
 	// shareInformer 获取 deployment 对象
 	deployment, err := dc.dLister.Deployments(namespace).Get(name)
 	if errors.IsNotFound(err) {
@@ -620,15 +634,19 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 	if err != nil {
 		return err
 	}
-
+	
 	// Deep-copy otherwise we are mutating our cache.
 	// TODO: Deep-copy only when needed.
 	d := deployment.DeepCopy()
-
+	
 	everything := metav1.LabelSelector{}
+	// 深度比较 selector 是否相等 (deployment selector 为空) 为空则返回 true (相等) 否则返回 false (不相等)
+	// 如果 deployment selector 为空则返回 true (相等) 否则返回 false (不相等)
+	// reflect.DeepEqual 深度比较 selector 是否相等 (deployment selector 为空) 为空则返回 true (相等) 否则返回 false (不相等)
 	if reflect.DeepEqual(d.Spec.Selector, &everything) {
 		// 深度比较 selector 相等
 		dc.eventRecorder.Eventf(d, v1.EventTypeWarning, "SelectingAll", "This deployment is selecting all pods. A non-empty selector is required.")
+		
 		if d.Status.ObservedGeneration < d.Generation {
 			d.Status.ObservedGeneration = d.Generation
 			// 同步 deployment 状态
@@ -636,7 +654,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		}
 		return nil
 	}
-
+	
 	// 通过 deployment 获取到对应的 ReplicaSets
 	// List ReplicaSets owned by this Deployment, while reconciling ControllerRef
 	// through adoption/orphaning.
@@ -655,24 +673,24 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 	if err != nil {
 		return err
 	}
-
+	
 	if d.DeletionTimestamp != nil {
 		// deployment 如果被删除了 仅同步状态
 		return dc.syncStatusOnly(ctx, d, rsList)
 	}
-
+	
 	// Update deployment conditions with an Unknown condition when pausing/resuming
 	// a deployment. In this way, we can be sure that we won't timeout when a user
 	// resumes a Deployment with a set progressDeadlineSeconds.
 	if err = dc.checkPausedConditions(ctx, d); err != nil {
 		return err
 	}
-
+	
 	if d.Spec.Paused {
 		// deployment 是暂停状态，则同步一次
 		return dc.sync(ctx, d, rsList)
 	}
-
+	
 	// rollback is not re-entrant in case the underlying replica sets are updated with a new
 	// revision so we should ensure that we won't proceed to update replica sets until we
 	// make sure that the deployment has cleaned up its rollback spec in subsequent enqueues.
@@ -680,7 +698,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		// 如果需要回滚，则执行回滚
 		return dc.rollback(ctx, d, rsList)
 	}
-
+	
 	// 获取扩容事件
 	scalingEvent, err := dc.isScalingEvent(ctx, d, rsList)
 	if err != nil {
@@ -690,7 +708,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		// 如果有扩容则同步一次
 		return dc.sync(ctx, d, rsList)
 	}
-
+	
 	switch d.Spec.Strategy.Type {
 	case apps.RecreateDeploymentStrategyType:
 		// 重新创建
