@@ -37,7 +37,8 @@ func (dc *DeploymentController) rolloutRolling(ctx context.Context, d *apps.Depl
 	// allRSs: 所有的rs
 	allRSs := append(oldRSs, newRS)
 
-	// Scale up, if we can.
+	// Scale up, if we can. 扩容
+	// 如果 NewRS 已经扩容完成，那么 scaledUp 为 true，否则为 false
 	scaledUp, err := dc.reconcileNewReplicaSet(ctx, allRSs, newRS, d)
 	if err != nil {
 		return err
@@ -47,7 +48,8 @@ func (dc *DeploymentController) rolloutRolling(ctx context.Context, d *apps.Depl
 		return dc.syncRolloutStatus(ctx, allRSs, newRS, d)
 	}
 
-	// Scale down, if we can.
+	// Scale down, if we can. 缩容
+	// 如果 OldRS 已经缩容完成，那么 scaledDown 为 true，否则为 false
 	scaledDown, err := dc.reconcileOldReplicaSets(ctx, allRSs, controller.FilterActiveReplicaSets(oldRSs), newRS, d)
 	if err != nil {
 		return err
@@ -57,7 +59,9 @@ func (dc *DeploymentController) rolloutRolling(ctx context.Context, d *apps.Depl
 		return dc.syncRolloutStatus(ctx, allRSs, newRS, d)
 	}
 
+	// 检查deployment是否完成
 	if deploymentutil.DeploymentComplete(d, &d.Status) {
+		// Update DeploymentStatus
 		if err := dc.cleanupDeployment(ctx, oldRSs, d); err != nil {
 			return err
 		}
@@ -78,14 +82,17 @@ func (dc *DeploymentController) reconcileNewReplicaSet(ctx context.Context, allR
 		return scaled, err
 	}
 	// Scale up
+	// 计算出需要扩容的数量
 	newReplicasCount, err := deploymentutil.NewRSNewReplicas(deployment, allRSs, newRS)
 	if err != nil {
 		return false, err
 	}
+	// 开始扩容
 	scaled, _, err := dc.scaleReplicaSetAndRecordEvent(ctx, newRS, newReplicasCount, deployment)
 	return scaled, err
 }
 
+// reconcileOldReplicaSets reconciles old replica sets. It returns true if all old replica sets have been reconciled.
 func (dc *DeploymentController) reconcileOldReplicaSets(ctx context.Context, allRSs []*apps.ReplicaSet, oldRSs []*apps.ReplicaSet, newRS *apps.ReplicaSet, deployment *apps.Deployment) (bool, error) {
 	oldPodsCount := deploymentutil.GetReplicaCountForReplicaSets(oldRSs)
 	if oldPodsCount == 0 {

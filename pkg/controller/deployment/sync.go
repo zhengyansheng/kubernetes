@@ -417,7 +417,7 @@ func (dc *DeploymentController) scaleReplicaSetAndRecordEvent(ctx context.Contex
 
 func (dc *DeploymentController) scaleReplicaSet(ctx context.Context, rs *apps.ReplicaSet, newScale int32, deployment *apps.Deployment, scalingOperation string) (bool, *apps.ReplicaSet, error) {
 
-	// 如果相等理论上不会进入这个方法 true
+	// true
 	sizeNeedsUpdate := *(rs.Spec.Replicas) != newScale
 
 	annotationsNeedUpdate := deploymentutil.ReplicasAnnotationsNeedUpdate(rs, *(deployment.Spec.Replicas), *(deployment.Spec.Replicas)+deploymentutil.MaxSurge(*deployment))
