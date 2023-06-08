@@ -82,11 +82,6 @@ func startDeploymentController(ctx context.Context, controllerContext Controller
 		return nil, true, fmt.Errorf("error creating Deployment controller: %v", err)
 	}
 	// 启动 Deployment Controller
-	// Run 翻译 -> 运行
-	// controller 翻译 -> 控制器
-	// concurrent 翻译 -> 并发 sync 翻译 -> 同步
-	// Copilot 翻译功能就是强大啊
-	//如果需要github copilot，一年 25 元 请联系+微信 zhengysbj
 	go dc.Run(ctx, int(controllerContext.ComponentConfig.DeploymentController.ConcurrentDeploymentSyncs))
 
 	return nil, true, nil

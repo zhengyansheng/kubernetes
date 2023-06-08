@@ -76,6 +76,8 @@ func (dc *DeploymentController) reconcileNewReplicaSet(ctx context.Context, allR
 		// Scaling not required.
 		return false, nil
 	}
+	// rs 5， d 4
+	// rs 3， d 6
 	if *(newRS.Spec.Replicas) > *(deployment.Spec.Replicas) {
 		// Scale down.
 		scaled, _, err := dc.scaleReplicaSetAndRecordEvent(ctx, newRS, *(deployment.Spec.Replicas), deployment)

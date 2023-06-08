@@ -498,7 +498,7 @@ func (dc *DeploymentController) worker(ctx context.Context) {
 }
 
 func (dc *DeploymentController) processNextWorkItem(ctx context.Context) bool {
-	// key: default/deployment1
+	// key: default/deployment_name
 	key, quit := dc.queue.Get() // Get -> Pop()
 	if quit {
 		// 队列关闭时返回 false
@@ -624,7 +624,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		klog.V(4).InfoS("Finished syncing deployment", "deployment", klog.KRef(namespace, name), "duration", time.Since(startTime))
 	}()
 
-	// shareInformer 获取 deployment 对象
+	// shareInformer 获取 deployment 对象 k get deploy nginx_deploy -o yaml
 	deployment, err := dc.dLister.Deployments(namespace).Get(name)
 	if errors.IsNotFound(err) {
 		klog.V(2).InfoS("Deployment has been deleted", "deployment", klog.KRef(namespace, name))
