@@ -63,16 +63,19 @@ func updateReplicaSetStatus(c appsclient.ReplicaSetInterface, rs *apps.ReplicaSe
 			fmt.Sprintf("availableReplicas %d->%d, ", rs.Status.AvailableReplicas, newStatus.AvailableReplicas) +
 			fmt.Sprintf("sequence No: %v->%v", rs.Status.ObservedGeneration, newStatus.ObservedGeneration))
 
+		// 更新rs status
 		rs.Status = newStatus
 		updatedRS, updateErr = c.UpdateStatus(context.TODO(), rs, metav1.UpdateOptions{})
 		if updateErr == nil {
 			return updatedRS, nil
 		}
 		// Stop retrying if we exceed statusUpdateRetries - the replicaSet will be requeued with a rate limit.
-		if i >= statusUpdateRetries {
+		// 如果重试次数大于1，就不再重试了
+		if i >= statusUpdateRetries { // statusUpdateRetries = 1
 			break
 		}
 		// Update the ReplicaSet with the latest resource version for the next poll
+		// 如果获取rs失败，就直接结束
 		if rs, getErr = c.Get(context.TODO(), rs.Name, metav1.GetOptions{}); getErr != nil {
 			// If the GET fails we can't trust status.Replicas anymore. This error
 			// is bound to be more interesting than the update failure.

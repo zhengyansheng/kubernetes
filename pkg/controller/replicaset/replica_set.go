@@ -155,6 +155,9 @@ func NewBaseController(rsInformer appsinformers.ReplicaSetInformer, podInformer 
 		UpdateFunc: rsc.updateRS,
 		DeleteFunc: rsc.deleteRS,
 	})
+	// AddIndexers adds index functions to the indexer. obj will be passed to the given function when GetIndexer is invoked.
+	// The indexer will call the function only for the given object, not for all objects in the store.
+	// AddIndexers 添加索引函数到索引器。当 GetIndexer 被调用时，obj 将会被传递给给定的函数。索引器只会为给定的对象调用该函数，而不是为存储中的所有对象调用该函数。
 	rsInformer.Informer().AddIndexers(cache.Indexers{
 		controllerUIDIndex: func(obj interface{}) ([]string, error) {
 			rs, ok := obj.(*apps.ReplicaSet)
@@ -277,6 +280,7 @@ func (rsc *ReplicaSetController) resolveControllerRef(namespace string, controll
 }
 
 func (rsc *ReplicaSetController) enqueueRS(rs *apps.ReplicaSet) {
+	// key -> namespace/name
 	key, err := controller.KeyFunc(rs)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for object %#v: %v", rs, err))
@@ -693,23 +697,29 @@ func (rsc *ReplicaSetController) syncReplicaSet(ctx context.Context, key string)
 		return err
 	}
 	// Ignore inactive pods.
+	// 过滤掉不活跃的 pod
 	filteredPods := controller.FilterActivePods(allPods)
 
-	// NOTE: filteredPods are pointing to objects from cache - if you need to
-	// modify them, you need to copy it first.
+	// NOTE: filteredPods are pointing to objects from cache - if you need to modify them, you need to copy it first.
 	filteredPods, err = rsc.claimPods(ctx, rs, selector, filteredPods)
 	if err != nil {
 		return err
 	}
 
+	// 修改rs的 replicas
 	var manageReplicasErr error
 	if rsNeedsSync && rs.DeletionTimestamp == nil {
+		// manageReplicas 会根据 rs 的 spec.replicas 和 rs.status.replicas 来调整 pod 的数量
 		manageReplicasErr = rsc.manageReplicas(ctx, filteredPods, rs)
 	}
+
+	// 修改rs 的 status
 	rs = rs.DeepCopy()
+	// 计算 status
 	newStatus := calculateStatus(rs, filteredPods, manageReplicasErr)
 
 	// Always updates status as pods come up or die.
+	// updateReplicaSetStatus 更新 rs 的 status
 	updatedRS, err := updateReplicaSetStatus(rsc.kubeClient.AppsV1().ReplicaSets(rs.Namespace), rs, newStatus)
 	if err != nil {
 		// Multiple things could lead to this update failing. Requeuing the replica set ensures
