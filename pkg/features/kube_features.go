@@ -567,6 +567,7 @@ const (
 	// beta: v1.26
 	//
 	// Allow pods to failover to a different node in case of non graceful node shutdown
+	// 允许pod在非正常节点关闭的情况下故障切换到其他节点
 	NodeOutOfServiceVolumeDetach featuregate.Feature = "NodeOutOfServiceVolumeDetach"
 
 	// owner: @ehashman

@@ -44,11 +44,11 @@ import (
 
 const (
 	// gcCheckPeriod defines frequency of running main controller loop
-	// gc的时间间隔，很显然是20s，而且这个数值不支持从命令参数中配置
+	// gc 检查间隔 20s
 	gcCheckPeriod = 20 * time.Second
 	// quarantineTime defines how long Orphaned GC waits for nodes to show up
 	// in an informer before issuing a GET call to check if they are truly gone
-	// 是在删除孤儿pod时等待节点ready前的时间
+	// quarantineTime 40s后如果节点还没有ready，就认为节点已经不存在了
 	quarantineTime = 40 * time.Second
 
 	// field manager used to add pod failure condition and change the pod phase
@@ -77,6 +77,7 @@ func init() {
 
 func NewPodGC(ctx context.Context, kubeClient clientset.Interface, podInformer coreinformers.PodInformer,
 	nodeInformer coreinformers.NodeInformer, terminatedPodThreshold int) *PodGCController {
+	klog.Infof("[xxx] Creating GC controller with threshold %d", terminatedPodThreshold)
 	return NewPodGCInternal(ctx, kubeClient, podInformer, nodeInformer, terminatedPodThreshold, gcCheckPeriod, quarantineTime)
 }
 
@@ -85,14 +86,14 @@ func NewPodGCInternal(ctx context.Context, kubeClient clientset.Interface, podIn
 	nodeInformer coreinformers.NodeInformer, terminatedPodThreshold int, gcCheckPeriod, quarantineTime time.Duration) *PodGCController {
 	gcc := &PodGCController{
 		kubeClient:             kubeClient,
-		terminatedPodThreshold: terminatedPodThreshold,
+		terminatedPodThreshold: terminatedPodThreshold, // 12500
 		podLister:              podInformer.Lister(),
 		podListerSynced:        podInformer.Informer().HasSynced,
 		nodeLister:             nodeInformer.Lister(),
 		nodeListerSynced:       nodeInformer.Informer().HasSynced,
 		nodeQueue:              workqueue.NewNamedDelayingQueue("orphaned_pods_nodes"),
-		gcCheckPeriod:          gcCheckPeriod,
-		quarantineTime:         quarantineTime,
+		gcCheckPeriod:          gcCheckPeriod,  // 20s
+		quarantineTime:         quarantineTime, // 40s
 	}
 
 	return gcc
@@ -110,19 +111,19 @@ func (gcc *PodGCController) Run(ctx context.Context) {
 	}
 
 	// 每隔20s执行一次gc
-	go wait.UntilWithContext(ctx, gcc.gc, gcc.gcCheckPeriod) // gcCheckPeriod = 20 * time.Second
+	go wait.UntilWithContext(ctx, gcc.gc, gcc.gcCheckPeriod) // 20s
 
 	<-ctx.Done()
 }
 
 func (gcc *PodGCController) gc(ctx context.Context) {
-	// 1. 拿到所有的pods
+	// 1. 列出所有的pods
 	pods, err := gcc.podLister.List(labels.Everything())
 	if err != nil {
 		klog.Errorf("Error while listing all pods: %v", err)
 		return
 	}
-	// 2. 拿到所有的nodes
+	// 2. 列出所有的nodes
 	nodes, err := gcc.nodeLister.List(labels.Everything())
 	if err != nil {
 		klog.Errorf("Error while listing all nodes: %v", err)
@@ -137,6 +138,7 @@ func (gcc *PodGCController) gc(ctx context.Context) {
 	}
 	// 回收 Orphaned 独立的pods
 	gcc.gcOrphaned(ctx, pods, nodes)
+
 	// 回收未调度的pods
 	gcc.gcUnscheduledTerminating(ctx, pods)
 }
@@ -157,8 +159,10 @@ func isPodTerminating(pod *v1.Pod) bool {
 // gcTerminating 回收那些 terminal pods
 func (gcc *PodGCController) gcTerminating(ctx context.Context, pods []*v1.Pod) {
 	klog.V(4).Info("GC'ing terminating pods that are on out-of-service nodes")
+	// 1. 循环所有的pods，如果pod的DeletionTimestamp字段不为空，并且pod所在的node的ready字段为false和该node上污点，那么将该pod加入terminatingPods列表
 	terminatingPods := []*v1.Pod{}
 	for _, pod := range pods {
+		// isPodTerminating DeletionTimestamp字段不为空
 		if isPodTerminating(pod) {
 			node, err := gcc.nodeLister.Get(pod.Spec.NodeName)
 			if err != nil {
@@ -188,11 +192,11 @@ func (gcc *PodGCController) gcTerminating(ctx context.Context, pods []*v1.Pod) {
 		wait.Add(1)
 		go func(pod *v1.Pod) {
 			defer wait.Done()
-			deletingPodsTotal.WithLabelValues().Inc()
+			deletingPodsTotal.WithLabelValues().Inc() // metrics
 			if err := gcc.markFailedAndDeletePod(ctx, pod); err != nil {
 				// ignore not founds
 				utilruntime.HandleError(err)
-				deletingPodsErrorTotal.WithLabelValues().Inc()
+				deletingPodsErrorTotal.WithLabelValues().Inc() // metrics
 			}
 		}(terminatingPods[i])
 	}
@@ -247,12 +251,13 @@ func (gcc *PodGCController) gcOrphaned(ctx context.Context, pods []*v1.Pod, node
 	for _, pod := range pods {
 		// "node4"
 		if pod.Spec.NodeName != "" && !existingNodeNames.Has(pod.Spec.NodeName) {
-			// nodeName 已经下线，添加到 nodeQueue队列中
-			gcc.nodeQueue.AddAfter(pod.Spec.NodeName, gcc.quarantineTime) // 40 * time.Second
+			// pod的 nodeName 字段 不为空，且 nodeName 不在 existingNodeNames 中
+			gcc.nodeQueue.AddAfter(pod.Spec.NodeName, gcc.quarantineTime) // 40s
 		}
 	}
 	// Check if nodes are still missing after quarantine period
 	// 二次确认
+	// 消费者，再次确认，返回删除的nodes
 	deletedNodesNames, quit := gcc.discoverDeletedNodes(ctx, existingNodeNames)
 	if quit {
 		return
@@ -314,6 +319,7 @@ func (gcc *PodGCController) checkIfNodeExists(ctx context.Context, name string) 
 }
 
 // gcUnscheduledTerminating deletes pods that are terminating and haven't been scheduled to a particular node.
+// 删除pods，这些pods正在终止，并且尚未安排到特定节点。
 func (gcc *PodGCController) gcUnscheduledTerminating(ctx context.Context, pods []*v1.Pod) {
 	klog.V(4).Infof("GC'ing unscheduled pods which are terminating.")
 
