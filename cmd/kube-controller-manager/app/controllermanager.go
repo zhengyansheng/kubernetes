@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -140,6 +139,7 @@ controller, and serviceaccounts controller.`,
 			}
 			// add feature enablement metrics
 			utilfeature.DefaultMutableFeatureGate.AddMetrics()
+
 			return Run(c.Complete(), wait.NeverStop)
 		},
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -203,6 +203,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 	var checks []healthz.HealthChecker
 	var electionChecker *leaderelection.HealthzAdaptor
 	if c.ComponentConfig.Generic.LeaderElection.LeaderElect {
+		// NewLeaderHealthzAdaptor 检查leader是否健康
 		electionChecker = leaderelection.NewLeaderHealthzAdaptor(time.Second * 20)
 		checks = append(checks, electionChecker)
 	}
@@ -210,6 +211,7 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 	// Start the controller manager HTTP server
 	// unsecuredMux is the handler for these controller *after* authn/authz filters have been applied
+	// 下面7行代码的意思 就是创建一个mux 用来处理http请求 		// 但是这个mux是没有经过认证和授权的 也就是说这个mux是不安全的
 	var unsecuredMux *mux.PathRecorderMux
 	if c.SecureServing != nil {
 		unsecuredMux = genericcontrollermanager.NewBaseHandler(&c.ComponentConfig.Generic.Debugging, healthzHandler)
@@ -225,16 +227,20 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 
 	clientBuilder, rootClientBuilder := createClientBuilders(c)
 
+	// saTokenControllerInitFunc is a function that starts the service account token controller.
+	// serviceAccountTokenControllerStarter is a struct that implements the InitFunc interface.
 	saTokenControllerInitFunc := serviceAccountTokenControllerStarter{rootClientBuilder: rootClientBuilder}.startServiceAccountTokenController
 
 	run := func(ctx context.Context, startSATokenController InitFunc, initializersFunc ControllerInitializersFunc) {
+		klog.Info("-----> starting controllers")
 		// 创建 controller 的上下文
 		controllerContext, err := CreateControllerContext(c, rootClientBuilder, clientBuilder, ctx.Done())
 		if err != nil {
 			klog.Fatalf("error building controller context: %v", err)
 		}
 		// 初始化 controller
-		controllerInitializers := initializersFunc(controllerContext.LoopMode)
+		//klog.Infof("-----> starting controllers on %v", controllerContext.LoopMode)
+		controllerInitializers := initializersFunc(controllerContext.LoopMode) // LoopMode = 0
 
 		// 启动 所有 controllers (controllerContext)
 		if err := StartControllers(ctx, controllerContext, startSATokenController, controllerInitializers, unsecuredMux, healthzHandler); err != nil {
@@ -244,14 +250,16 @@ func Run(c *config.CompletedConfig, stopCh <-chan struct{}) error {
 		// 启动 informer factory
 		controllerContext.InformerFactory.Start(stopCh)
 		controllerContext.ObjectOrMetadataInformerFactory.Start(stopCh)
+
 		// informer 初始化完成后，关闭 channel
 		close(controllerContext.InformersStarted)
 
 		<-ctx.Done()
 	}
+	//flowcontrol.NewTokenBucketRateLimiter(0.1, 1)
+	//queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
 
 	// No leader election, run directly
-	// 没有领导人选举，直接参选
 	if !c.ComponentConfig.Generic.LeaderElection.LeaderElect {
 		ctx, _ := wait.ContextForChannel(stopCh)
 		run(ctx, saTokenControllerInitFunc, NewControllerInitializers)
@@ -374,6 +382,7 @@ type ControllerContext struct {
 	// IncludeCloudLoops is for a kube-controller-manager running all loops
 	// ExternalLoops is for a kube-controller-manager running with a cloud-controller-manager
 	// ExternalLoops 用于运行所有循环的 cloud-controller-manager
+	// IncludeCloudLoops is for a kube-controller-manager running all loops
 	LoopMode ControllerLoopMode
 
 	// InformersStarted is closed after all of the controllers have been initialized and are running.  After this point it is safe,
@@ -438,6 +447,7 @@ const (
 // paired to their InitFunc.  This allows for structured downstream composition and subdivision.
 // 初始化 控制器名称 和 启动控制器函数的对应关系
 func NewControllerInitializers(loopMode ControllerLoopMode) map[string]InitFunc {
+	// loopMode = 0
 	controllers := map[string]InitFunc{}
 
 	// All of the controllers must have unique names, or else we will explode.
@@ -507,6 +517,7 @@ func NewControllerInitializers(loopMode ControllerLoopMode) map[string]InitFunc 
 		controllers["resource-claim-controller"] = startResourceClaimController
 	}
 
+	klog.Infof("-----> registered controllers count: %d", len(controllers))
 	return controllers
 }
 
@@ -712,6 +723,14 @@ func (c serviceAccountTokenControllerStarter) startServiceAccountTokenController
 
 	// start the first set of informers now so that other controllers can start
 	controllerContext.InformerFactory.Start(ctx.Done())
+
+	////cache.NewIndexerInformer(podListWatcher, &v1.Pod{}, 0, cache.ResourceEventHandlerFuncs{}, cache.Indexers{})
+	//factory := informers.NewSharedInformerFactory(nil, 30*time.Second)
+	//podInformer := factory.Core().V1().Pods()
+	//informer := podInformer.Informer()
+	//podLister := podInformer.Lister()
+	////podLister.Pods()
+	//factory.Start()
 
 	return nil, true, nil
 }

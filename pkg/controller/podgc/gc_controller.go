@@ -77,7 +77,7 @@ func init() {
 
 func NewPodGC(ctx context.Context, kubeClient clientset.Interface, podInformer coreinformers.PodInformer,
 	nodeInformer coreinformers.NodeInformer, terminatedPodThreshold int) *PodGCController {
-	klog.Infof("[xxx] Creating GC controller with threshold %d", terminatedPodThreshold)
+	klog.Infof("-----> Creating GC controller with threshold %d", terminatedPodThreshold) // 12500
 	return NewPodGCInternal(ctx, kubeClient, podInformer, nodeInformer, terminatedPodThreshold, gcCheckPeriod, quarantineTime)
 }
 
@@ -129,11 +129,14 @@ func (gcc *PodGCController) gc(ctx context.Context) {
 		klog.Errorf("Error while listing all nodes: %v", err)
 		return
 	}
+
 	if gcc.terminatedPodThreshold > 0 {
 		// 如果 terminatedPodThreshold 大于0 则开始回收pods
+		klog.Infof("-----> gc started with threshold %d", gcc.terminatedPodThreshold)
 		gcc.gcTerminated(ctx, pods)
 	}
 	if utilfeature.DefaultFeatureGate.Enabled(features.NodeOutOfServiceVolumeDetach) {
+		klog.Infof("-----> gc started for out of service nodes")
 		gcc.gcTerminating(ctx, pods)
 	}
 	// 回收 Orphaned 独立的pods
@@ -215,8 +218,11 @@ func (gcc *PodGCController) gcTerminated(ctx context.Context, pods []*v1.Pod) {
 	}
 
 	terminatedPodCount := len(terminatedPods)
+	klog.Infof("-----> terminatedPodCount: %d", terminatedPodCount)
 	deleteCount := terminatedPodCount - gcc.terminatedPodThreshold // 12500
+	klog.V(4).Infof("GC'ing %d terminated pods", terminatedPodCount)
 
+	klog.Infof("-----> deleteCount: %d", deleteCount)
 	if deleteCount <= 0 {
 		// 直接退出，没有要终止的pods
 		return

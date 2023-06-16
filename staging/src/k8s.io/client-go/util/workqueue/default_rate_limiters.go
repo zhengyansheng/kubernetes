@@ -38,9 +38,11 @@ type RateLimiter interface {
 // DefaultControllerRateLimiter is a no-arg constructor for a default rate limiter for a workqueue.  It has
 // both overall and per-item rate limiting.  The overall is a token bucket and the per-item is exponential
 func DefaultControllerRateLimiter() RateLimiter {
+	// NewMaxOfRateLimiter 返回一个 RateLimiter，它将所有传入的 RateLimiter 组合在一起，并返回最大的延迟时间
 	return NewMaxOfRateLimiter(
 		NewItemExponentialFailureRateLimiter(5*time.Millisecond, 1000*time.Second),
 		// 10 qps, 100 bucket size.  This is only for retry speed and its only the overall factor (not per item)
+		// 令牌桶 10 qps, 100 bucket size 仅用于重试速度，仅为整体因素（而不是每个项目）
 		&BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)}, // 令牌桶
 	)
 }

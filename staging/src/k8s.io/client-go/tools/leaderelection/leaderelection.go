@@ -380,8 +380,8 @@ func (le *LeaderElector) tryAcquireOrRenew(ctx context.Context) bool {
 
 		le.observedRawRecord = oldLeaderElectionRawRecord
 	}
-	klog.Infof("holder identity: %v, is leader: %v", oldLeaderElectionRecord.HolderIdentity, le.IsLeader())
-	klog.Infof("observedTime: %v, now time: %v", le.observedTime.Add(le.config.LeaseDuration), now.Time)
+	//klog.Infof("holder identity: %v, is leader: %v", oldLeaderElectionRecord.HolderIdentity, le.IsLeader())
+	//klog.Infof("observedTime: %v, now time: %v", le.observedTime.Add(le.config.LeaseDuration), now.Time)
 	if len(oldLeaderElectionRecord.HolderIdentity) > 0 &&
 		// TODO: xxx
 		le.observedTime.Add(le.config.LeaseDuration).After(now.Time) &&

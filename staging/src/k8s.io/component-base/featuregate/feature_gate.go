@@ -52,6 +52,7 @@ const (
 
 var (
 	// The generic features.
+	// {"AllAlpha": {Default: false, PreRelease: Alpha}, "AllBeta": {Default: false, PreRelease: Beta}}
 	defaultFeatures = map[Feature]FeatureSpec{
 		allAlphaGate: {Default: false, PreRelease: Alpha},
 		allBetaGate:  {Default: false, PreRelease: Beta},
@@ -162,6 +163,7 @@ var internalPackages = []string{"k8s.io/component-base/featuregate/feature_gate.
 
 func NewFeatureGate() *featureGate {
 	known := map[Feature]FeatureSpec{}
+	// defaultFeatures -> {"AllAlpha": {Default: false, PreRelease: Alpha}, "AllBeta": {Default: false, PreRelease: Beta}}
 	for k, v := range defaultFeatures {
 		known[k] = v
 	}

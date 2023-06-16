@@ -32,8 +32,8 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// PodInformer provides access to a shared informer and lister for
-// Pods.
+// PodInformer provides access to a shared informer and lister for Pods.
+// PodInformer 提供访问共享informer和Pods的lister
 type PodInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() v1.PodLister
