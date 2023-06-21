@@ -251,6 +251,7 @@ func (r *REST) Delete(ctx context.Context, name string, deleteValidation rest.Va
 	if len(namespace.Spec.Finalizers) != 0 {
 		return namespace, false, nil
 	}
+	// 调用真正的删除方法
 	return r.store.Delete(ctx, name, deleteValidation, options)
 }
 

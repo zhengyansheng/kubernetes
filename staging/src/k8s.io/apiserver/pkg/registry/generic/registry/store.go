@@ -1102,6 +1102,7 @@ func (e *Store) Delete(ctx context.Context, name string, deleteValidation rest.V
 	// delete immediately, or no graceful deletion supported
 	klog.V(6).InfoS("Going to delete object from registry", "object", klog.KRef(genericapirequest.NamespaceValue(ctx), name))
 	out = e.NewFunc()
+	// 调用 Storage.Delete 方法删除对象
 	if err := e.Storage.Delete(ctx, key, out, &preconditions, storage.ValidateObjectFunc(deleteValidation), dryrun.IsDryRun(options.DryRun), nil); err != nil {
 		// Please refer to the place where we set ignoreNotFound for the reason
 		// why we ignore the NotFound error .

@@ -281,6 +281,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 		optionsExternalVersion = *a.group.OptionsExternalVersion
 	}
 
+	// path -> pods, pod/logs
 	resource, subresource, err := splitSubresource(path)
 	if err != nil {
 		return nil, nil, err
@@ -932,8 +933,10 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			if deleteReturnsDeletedObject {
 				deleteReturnType = producedObject
 			}
+			// 初始化handler 核心 restfulDeleteResource
 			handler := metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, deprecated, removedRelease, restfulDeleteResource(gracefulDeleter, isGracefulDeleter, reqScope, admit))
 			handler = utilwarning.AddWarningsHandler(handler, warnings)
+			// 路由
 			route := ws.DELETE(action.Path).To(handler).
 				Doc(doc).
 				Param(ws.QueryParameter("pretty", "If 'true', then the output is pretty printed.")).
@@ -1281,6 +1284,7 @@ func restfulCreateResource(r rest.Creater, scope handlers.RequestScope, admit ad
 
 func restfulDeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope handlers.RequestScope, admit admission.Interface) restful.RouteFunction {
 	return func(req *restful.Request, res *restful.Response) {
+		// DeleteResource 删除资源 会调用GracefulDelete
 		handlers.DeleteResource(r, allowsOptions, &scope, admit)(res.ResponseWriter, req.Request)
 	}
 }

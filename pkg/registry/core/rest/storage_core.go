@@ -101,6 +101,7 @@ type LegacyRESTStorage struct {
 	ServiceNodePortAllocator           rangeallocation.RangeRegistry
 }
 
+// NewLegacyRESTStorage returns a new LegacyRESTStorage object.
 func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(apiResourceConfigSource serverstorage.APIResourceConfigSource, restOptionsGetter generic.RESTOptionsGetter) (LegacyRESTStorage, genericapiserver.APIGroupInfo, error) {
 	apiGroupInfo := genericapiserver.APIGroupInfo{
 		PrioritizedVersions:          legacyscheme.Scheme.PrioritizedVersionsForGroup(""),
@@ -116,6 +117,7 @@ func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(apiResourceConfigSource 
 	}
 	restStorage := LegacyRESTStorage{}
 
+	// 初始化各种资源的存储
 	podTemplateStorage, err := podtemplatestore.NewREST(restOptionsGetter)
 	if err != nil {
 		return LegacyRESTStorage{}, genericapiserver.APIGroupInfo{}, err
@@ -166,6 +168,7 @@ func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(apiResourceConfigSource 
 		return LegacyRESTStorage{}, genericapiserver.APIGroupInfo{}, err
 	}
 
+	// 初始化pod的存储
 	podStorage, err := podstore.NewStorage(
 		restOptionsGetter,
 		nodeStorage.KubeletConnectionInfo,
@@ -276,7 +279,9 @@ func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(apiResourceConfigSource 
 		return LegacyRESTStorage{}, genericapiserver.APIGroupInfo{}, err
 	}
 
+	// storage 保存路由关系 { "path" : handler }
 	storage := map[string]rest.Storage{}
+
 	if resource := "pods"; apiResourceConfigSource.ResourceEnabled(corev1.SchemeGroupVersion.WithResource(resource)) {
 		storage[resource] = podStorage.Pod
 		storage[resource+"/attach"] = podStorage.Attach

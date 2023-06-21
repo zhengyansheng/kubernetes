@@ -354,6 +354,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		return nil, err
 	}
 
+	// logs路由
 	if c.ExtraConfig.EnableLogsSupport {
 		routes.Logs{}.Install(s.Handler.GoRestfulContainer)
 	}
@@ -395,7 +396,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 	}
 
 	// install legacy rest storage
-
+	// 安装旧的rest storage
 	if err := m.InstallLegacyAPI(&c, c.GenericConfig.RESTOptionsGetter); err != nil {
 		return nil, err
 	}
@@ -438,6 +439,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		eventsrest.RESTStorageProvider{TTL: c.ExtraConfig.EventTTL},
 		resourcerest.RESTStorageProvider{},
 	}
+	// 核心
 	if err := m.InstallAPIs(c.ExtraConfig.APIResourceConfigSource, c.GenericConfig.RESTOptionsGetter, restStorageProviders...); err != nil {
 		return nil, err
 	}
@@ -554,6 +556,7 @@ func labelAPIServerHeartbeat(lease *coordinationapiv1.Lease) error {
 }
 
 // InstallLegacyAPI will install the legacy APIs for the restStorageProviders if they are enabled.
+// InstallLegacyAPI 安装restStorageProviders的旧版API，如果启用的话。
 func (m *Instance) InstallLegacyAPI(c *completedConfig, restOptionsGetter generic.RESTOptionsGetter) error {
 	legacyRESTStorageProvider := corerest.LegacyRESTStorageProvider{
 		StorageFactory:              c.ExtraConfig.StorageFactory,

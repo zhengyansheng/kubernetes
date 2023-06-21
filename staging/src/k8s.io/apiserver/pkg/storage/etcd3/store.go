@@ -242,9 +242,11 @@ func (s *store) Delete(
 	return s.conditionalDelete(ctx, preparedKey, out, v, preconditions, validateDeletion, cachedExistingObject)
 }
 
+// conditionalDelete 删除一个对象，如果存在的话。
 func (s *store) conditionalDelete(
 	ctx context.Context, key string, out runtime.Object, v reflect.Value, preconditions *storage.Preconditions,
 	validateDeletion storage.ValidateObjectFunc, cachedExistingObject runtime.Object) error {
+
 	getCurrentState := func() (*objState, error) {
 		startTime := time.Now()
 		getResp, err := s.client.KV.Get(ctx, key)
@@ -323,18 +325,21 @@ func (s *store) conditionalDelete(
 		}
 
 		startTime := time.Now()
+
+		klog.Infof("-----> client start delete key: %v", key)
 		txnResp, err := s.client.KV.Txn(ctx).If(
-			clientv3.Compare(clientv3.ModRevision(key), "=", origState.rev),
+			clientv3.Compare(clientv3.ModRevision(key), "=", origState.rev), // 比较当前的修订版本 key 是否等于 origState.rev
 		).Then(
-			clientv3.OpDelete(key),
+			clientv3.OpDelete(key), // 删除 key
 		).Else(
-			clientv3.OpGet(key),
+			clientv3.OpGet(key), // 获取 key
 		).Commit()
 		metrics.RecordEtcdRequestLatency("delete", s.groupResourceString, startTime)
 		if err != nil {
 			return err
 		}
 		if !txnResp.Succeeded {
+			// 如果删除失败，可能是因为 key 的修订版本不等于 origState.rev，这时候需要重新获取 key 的修订版本
 			getResp := (*clientv3.GetResponse)(txnResp.Responses[0].GetResponseRange())
 			klog.V(4).Infof("deletion of %s failed because of a conflict, going to retry", key)
 			origState, err = s.getState(ctx, getResp, key, v, false)
@@ -352,6 +357,7 @@ func (s *store) conditionalDelete(
 		if deleteResp.Header == nil {
 			return errors.New("invalid DeleteRange response - nil header")
 		}
+		// 解码删除的对象
 		return decode(s.codec, s.versioner, origState.data, out, deleteResp.Header.Revision)
 	}
 }
