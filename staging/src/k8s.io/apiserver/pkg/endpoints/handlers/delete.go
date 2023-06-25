@@ -73,6 +73,7 @@ func DeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope *RequestSc
 		}
 
 		options := &metav1.DeleteOptions{}
+		// allowsOptions = true
 		if allowsOptions {
 			body, err := limitedReadBodyWithRecordMetric(ctx, req, scope.MaxRequestBodyBytes, scope.Resource.GroupResource().String(), requestmetrics.Delete)
 			if err != nil {
@@ -123,6 +124,8 @@ func DeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope *RequestSc
 		wasDeleted := true
 		userInfo, _ := request.UserFrom(ctx)
 		staticAdmissionAttrs := admission.NewAttributesRecord(nil, nil, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Delete, options, dryrun.IsDryRun(options.DryRun), userInfo)
+
+		// 调用rest.Finisher接口的FinishRequest方法
 		result, err := finisher.FinishRequest(ctx, func() (runtime.Object, error) {
 			// 调用rest.GracefulDeleter接口的Delete方法
 			obj, deleted, err := r.Delete(ctx, name, rest.AdmissionToValidateObjectDeleteFunc(admit, staticAdmissionAttrs, scope), options)
@@ -219,8 +222,9 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope *RequestSc
 			}
 		}
 
+		// options 初始化为nil
 		options := &metav1.DeleteOptions{}
-		if checkBody {
+		if checkBody { // checkBody default -> true
 			body, err := limitedReadBodyWithRecordMetric(ctx, req, scope.MaxRequestBodyBytes, scope.Resource.GroupResource().String(), requestmetrics.DeleteCollection)
 			if err != nil {
 				span.AddEvent("limitedReadBody failed", attribute.Int("len", len(body)), attribute.String("err", err.Error()))

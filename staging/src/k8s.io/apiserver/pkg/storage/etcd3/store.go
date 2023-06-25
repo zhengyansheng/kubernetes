@@ -28,7 +28,6 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.opentelemetry.io/otel/attribute"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -370,6 +369,7 @@ func (s *store) GuaranteedUpdate(
 	if err != nil {
 		return err
 	}
+	// 追踪
 	ctx, span := tracing.Start(ctx, "GuaranteedUpdate etcd3",
 		attribute.String("audit-id", audit.GetAuditIDTruncated(ctx)),
 		attribute.String("key", key),
@@ -493,6 +493,7 @@ func (s *store) GuaranteedUpdate(
 		}
 		span.AddEvent("Transaction prepared")
 
+		// 事务修改
 		startTime := time.Now()
 		txnResp, err := s.client.KV.Txn(ctx).If(
 			clientv3.Compare(clientv3.ModRevision(preparedKey), "=", origState.rev),
@@ -501,6 +502,23 @@ func (s *store) GuaranteedUpdate(
 		).Else(
 			clientv3.OpGet(preparedKey),
 		).Commit()
+		//if strings.Contains(preparedKey, "pod-nginx") {
+		//	if obj, err := runtime.Decode(s.codec, newData); err != nil {
+		//		klog.Errorf("-----> err1 %v", err)
+		//	} else {
+		//		if b, err := json.Marshal(obj); err != nil {
+		//			klog.Errorf("-----> err2 %v", err)
+		//		} else {
+		//			jsonToYAML, err := yaml.JSONToYAML(b)
+		//			if err != nil {
+		//				return err
+		//			}
+		//			klog.Infof("-----> jsonToYAML: %s", string(jsonToYAML))
+		//		}
+		//	}
+		//	klog.Infof("-----------------------------------------------------")
+		//	//klog.Infof("-----> preparedKey: %s, newData: %s", preparedKey, string(newData))
+		//}
 		metrics.RecordEtcdRequestLatency("update", s.groupResourceString, startTime)
 		if err != nil {
 			span.AddEvent("Txn call failed", attribute.String("err", err.Error()))

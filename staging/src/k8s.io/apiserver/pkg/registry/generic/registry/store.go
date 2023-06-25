@@ -939,10 +939,19 @@ func markAsDeleting(obj runtime.Object, now time.Time) (err error) {
 //     should be deleted immediately
 //  4. a new output object with the state that was updated
 //  5. a copy of the last existing state of the object
+/*
+	updateForGracefulDeletitionAndFinalizers通过设置删除时间戳和宽限期秒（优雅删除）和更新终结器列表（终结）；它返回：
+	1. 一个错误
+	2. 一个布尔值，表示找不到该对象，但应忽略它
+	3. 一个布尔值，表示对象的宽限期已用完应立即删除
+	4. 具有已更新状态的新输出对象
+	5. 对象最后存在状态的副本
+*/
 func (e *Store) updateForGracefulDeletionAndFinalizers(ctx context.Context, name, key string, options *metav1.DeleteOptions, preconditions storage.Preconditions, deleteValidation rest.ValidateObjectFunc, in runtime.Object) (err error, ignoreNotFound, deleteImmediately bool, out, lastExisting runtime.Object) {
 	lastGraceful := int64(0)
 	var pendingFinalizers bool
 	out = e.NewFunc()
+	// GuaranteedUpdate 方法是一个原子操作，它会在更新之前获取对象的最新版本，然后将更新应用于该版本，并在更新完成后返回更新后的对象。
 	err = e.Storage.GuaranteedUpdate(
 		ctx,
 		key,
@@ -1031,6 +1040,8 @@ func (e *Store) Delete(ctx context.Context, name string, deleteValidation rest.V
 	if err != nil {
 		return nil, false, err
 	}
+
+	// 查询对象 (Get) 通过 key 查询对象
 	obj := e.NewFunc()
 	qualifiedResource := e.qualifiedResourceFromContext(ctx)
 	if err = e.Storage.Get(ctx, key, storage.GetOptions{}, obj); err != nil {
@@ -1038,7 +1049,9 @@ func (e *Store) Delete(ctx context.Context, name string, deleteValidation rest.V
 	}
 
 	// support older consumers of delete by treating "nil" as delete immediately
+	klog.Infof("-----> options: %+v", *options)
 	if options == nil {
+		// 立即删除 gracefulPeriodSeconds = 0
 		options = metav1.NewDeleteOptions(0)
 	}
 	var preconditions storage.Preconditions
@@ -1046,6 +1059,7 @@ func (e *Store) Delete(ctx context.Context, name string, deleteValidation rest.V
 		preconditions.UID = options.Preconditions.UID
 		preconditions.ResourceVersion = options.Preconditions.ResourceVersion
 	}
+	// 核心逻辑 (SetDeletionTimestamp, SetDeletionGracePeriodSeconds)
 	graceful, pendingGraceful, err := rest.BeforeDelete(e.DeleteStrategy, ctx, obj, options)
 	if err != nil {
 		return nil, false, err
@@ -1070,6 +1084,7 @@ func (e *Store) Delete(ctx context.Context, name string, deleteValidation rest.V
 	shouldUpdateFinalizers, _ := deletionFinalizersForGarbageCollection(ctx, e, accessor, options)
 	// TODO: remove the check, because we support no-op updates now.
 	if graceful || pendingFinalizers || shouldUpdateFinalizers {
+
 		err, ignoreNotFound, deleteImmediately, out, lastExisting = e.updateForGracefulDeletionAndFinalizers(ctx, name, key, options, preconditions, deleteValidation, obj)
 		// Update the preconditions.ResourceVersion if set since we updated the object.
 		if err == nil && deleteImmediately && preconditions.ResourceVersion != nil {
@@ -1082,10 +1097,14 @@ func (e *Store) Delete(ctx context.Context, name string, deleteValidation rest.V
 		}
 	}
 
+	// 优雅删除 graceful deletion，打上标记就返回
 	// !deleteImmediately covers all cases where err != nil. We keep both to be future-proof.
 	if !deleteImmediately || err != nil {
+		// out 被修改的对象(deletionTimestamp, deletionGracePeriodSeconds, resourceVersion)
 		return out, false, err
 	}
+
+	// 非优雅删除 non-graceful deletion, 从database里删除key
 
 	// Going further in this function is not useful when we are
 	// performing a dry-run request. Worse, it will actually
@@ -1228,6 +1247,7 @@ func (e *Store) DeleteCollection(ctx context.Context, deleteValidation rest.Vali
 // finalizeDelete runs the Store's AfterDelete hook if runHooks is set and
 // returns the decorated deleted object if appropriate.
 func (e *Store) finalizeDelete(ctx context.Context, obj runtime.Object, runHooks bool, options *metav1.DeleteOptions) (runtime.Object, error) {
+	// true &&
 	if runHooks && e.AfterDelete != nil {
 		e.AfterDelete(obj, options)
 	}

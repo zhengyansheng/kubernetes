@@ -188,7 +188,7 @@ func (a *APIInstaller) Install() ([]metav1.APIResource, []*storageversion.Resour
 	ws := a.newWebService()
 
 	// Register the paths in a deterministic (sorted) order to get a deterministic swagger spec.
-	paths := make([]string, len(a.group.Storage))
+	paths := make([]string, len(a.group.Storage)) // Storage map[string]rest.Storage
 	var i int = 0
 	for path := range a.group.Storage {
 		paths[i] = path
@@ -329,6 +329,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 	lister, isLister := storage.(rest.Lister)
 	getter, isGetter := storage.(rest.Getter)
 	getterWithOptions, isGetterWithOptions := storage.(rest.GetterWithOptions)
+	// 优雅删除
 	gracefulDeleter, isGracefulDeleter := storage.(rest.GracefulDeleter)
 	collectionDeleter, isCollectionDeleter := storage.(rest.CollectionDeleter)
 	updater, isUpdater := storage.(rest.Updater)
@@ -1291,6 +1292,7 @@ func restfulDeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope han
 
 func restfulDeleteCollection(r rest.CollectionDeleter, checkBody bool, scope handlers.RequestScope, admit admission.Interface) restful.RouteFunction {
 	return func(req *restful.Request, res *restful.Response) {
+		// checkBody 是否检查body -> true
 		handlers.DeleteCollection(r, checkBody, &scope, admit)(res.ResponseWriter, req.Request)
 	}
 }

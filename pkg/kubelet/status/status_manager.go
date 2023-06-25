@@ -187,6 +187,7 @@ func (m *manager) Start() {
 					"podUID", syncRequest.podUID,
 					"statusVersion", syncRequest.status.version,
 					"status", syncRequest.status.status)
+				// 同步pod状态
 				m.syncPod(syncRequest.podUID, syncRequest.status)
 			case <-syncTicker:
 				klog.V(5).InfoS("Status Manager: syncing batch")
@@ -743,18 +744,21 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 
 	// We don't handle graceful deletion of mirror pods.
 	if m.canBeDeleted(pod, status.status) {
+		// 立即删除参数
 		deleteOptions := metav1.DeleteOptions{
-			GracePeriodSeconds: new(int64),
+			GracePeriodSeconds: new(int64), // 设置为0，立即删除
 			// Use the pod UID as the precondition for deletion to prevent deleting a
 			// newly created pod with the same name and namespace.
 			Preconditions: metav1.NewUIDPreconditions(string(pod.UID)),
 		}
+		// 删除
 		err = m.kubeClient.CoreV1().Pods(pod.Namespace).Delete(context.TODO(), pod.Name, deleteOptions)
 		if err != nil {
 			klog.InfoS("Failed to delete status for pod", "pod", klog.KObj(pod), "err", err)
 			return
 		}
 		klog.V(3).InfoS("Pod fully terminated and removed from etcd", "pod", klog.KObj(pod))
+
 		m.deletePodStatus(uid)
 	}
 }
