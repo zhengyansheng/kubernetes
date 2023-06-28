@@ -409,16 +409,19 @@ func (cgc *containerGC) evictPodLogsDirectories(ctx context.Context, allSourcesR
 func (cgc *containerGC) GarbageCollect(ctx context.Context, gcPolicy kubecontainer.GCPolicy, allSourcesReady bool, evictNonDeletedPods bool) error {
 	errors := []error{}
 	// Remove evictable containers
+	// 移除可驱逐的容器
 	if err := cgc.evictContainers(ctx, gcPolicy, allSourcesReady, evictNonDeletedPods); err != nil {
 		errors = append(errors, err)
 	}
 
 	// Remove sandboxes with zero containers
+	// 移除没有容器的沙箱
 	if err := cgc.evictSandboxes(ctx, evictNonDeletedPods); err != nil {
 		errors = append(errors, err)
 	}
 
 	// Remove pod sandbox log directory
+	// 移除pod沙箱日志目录
 	if err := cgc.evictPodLogsDirectories(ctx, allSourcesReady); err != nil {
 		errors = append(errors, err)
 	}

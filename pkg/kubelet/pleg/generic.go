@@ -136,11 +136,15 @@ func (g *GenericPLEG) Watch() chan *PodLifecycleEvent {
 
 // Start spawns a goroutine to relist periodically.
 func (g *GenericPLEG) Start() {
+	// 加锁
 	g.runningMu.Lock()
 	defer g.runningMu.Unlock()
+
 	if !g.isRunning {
 		g.isRunning = true
 		g.stopCh = make(chan struct{})
+
+		// 启动一个goroutine，定时执行g.Relist
 		go wait.Until(g.Relist, g.relistDuration.RelistPeriod, g.stopCh)
 	}
 }
@@ -242,6 +246,7 @@ func (g *GenericPLEG) Relist() {
 	pods := kubecontainer.Pods(podList)
 	// update running pod and container count
 	updateRunningPodAndContainerMetrics(pods)
+
 	g.podRecords.setCurrent(pods)
 
 	// Compare the old and the current pods, and generate events.
@@ -252,6 +257,7 @@ func (g *GenericPLEG) Relist() {
 		// Get all containers in the old and the new pod.
 		allContainers := getContainersFromPods(oldPod, pod)
 		for _, container := range allContainers {
+
 			events := computeEvents(oldPod, pod, &container.ID)
 			for _, e := range events {
 				updateEvents(eventsByPodID, e)
@@ -391,8 +397,10 @@ func computeEvents(oldPod, newPod *kubecontainer.Pod, cid *kubecontainer.Contain
 	} else if newPod != nil {
 		pid = newPod.ID
 	}
+	// 容器的状态
 	oldState := getContainerState(oldPod, cid)
 	newState := getContainerState(newPod, cid)
+	// 生成事件
 	return generateEvents(pid, cid.ID, oldState, newState)
 }
 

@@ -112,8 +112,10 @@ func (e *EventedPLEG) Relist() {
 
 // Start starts the Evented PLEG
 func (e *EventedPLEG) Start() {
+	// 加锁
 	e.runningMu.Lock()
 	defer e.runningMu.Unlock()
+
 	if isEventedPLEGInUse() {
 		return
 	}

@@ -321,8 +321,10 @@ func mirrorPodsMapToMirrorPods(UIDMap map[kubetypes.MirrorPodUID]*v1.Pod) []*v1.
 }
 
 func (pm *basicManager) GetMirrorPodByPod(pod *v1.Pod) (*v1.Pod, bool) {
+	// 加锁
 	pm.lock.RLock()
 	defer pm.lock.RUnlock()
+	// 通过pod的全名获取镜像pod
 	mirrorPod, ok := pm.mirrorPodByFullName[kubecontainer.GetPodFullName(pod)]
 	return mirrorPod, ok
 }

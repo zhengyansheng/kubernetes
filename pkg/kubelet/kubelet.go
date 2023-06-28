@@ -264,8 +264,7 @@ type Dependencies struct {
 	useLegacyCadvisorStats bool
 }
 
-// makePodSourceConfig creates a config.PodConfig from the given
-// KubeletConfiguration or returns an error.
+// makePodSourceConfig creates a config.PodConfig from the given KubeletConfiguration or returns an error.
 func makePodSourceConfig(kubeCfg *kubeletconfiginternal.KubeletConfiguration, kubeDeps *Dependencies, nodeName types.NodeName, nodeHasSynced func() bool) (*config.PodConfig, error) {
 	manifestURLHeader := make(http.Header)
 	if len(kubeCfg.StaticPodURLHeader) > 0 {
@@ -294,6 +293,7 @@ func makePodSourceConfig(kubeCfg *kubeletconfiginternal.KubeletConfiguration, ku
 		config.NewSourceURL(kubeCfg.StaticPodURL, manifestURLHeader, nodeName, kubeCfg.HTTPCheckFrequency.Duration, cfg.Channel(ctx, kubetypes.HTTPSource))
 	}
 
+	// 启动listAndWatch
 	if kubeDeps.KubeClient != nil {
 		klog.InfoS("Adding apiserver pod source")
 		config.NewSourceApiserver(kubeDeps.KubeClient, nodeName, nodeHasSynced, cfg.Channel(ctx, kubetypes.ApiserverSource))
@@ -409,6 +409,7 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		}
 	}
 
+	// gc策略
 	containerGCPolicy := kubecontainer.GCPolicy{
 		MinAge:             minimumGCAge.Duration,
 		MaxPerPodContainer: int(maxPerPodContainerCount),
@@ -419,6 +420,7 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		KubeletEndpoint: v1.DaemonEndpoint{Port: kubeCfg.Port},
 	}
 
+	// image gc策略
 	imageGCPolicy := images.ImageGCPolicy{
 		MinAge:               kubeCfg.ImageMinimumGCAge.Duration,
 		HighThresholdPercent: int(kubeCfg.ImageGCHighThresholdPercent),
@@ -1347,7 +1349,9 @@ func (kl *Kubelet) setupDataDirs() error {
 
 // StartGarbageCollection starts garbage collection threads.
 func (kl *Kubelet) StartGarbageCollection() {
+	// 设置gc初始化的状态
 	loggedContainerGCFailure := false
+
 	go wait.Until(func() {
 		ctx := context.Background()
 		if err := kl.containerGC.GarbageCollect(ctx); err != nil {
@@ -1510,7 +1514,7 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 		os.Exit(1)
 	}
 
-	// Start volume manager
+	// Start volume manager 启动volume管理
 	go kl.volumeManager.Run(kl.sourcesReady, wait.NeverStop)
 
 	if kl.kubeClient != nil {
@@ -1523,12 +1527,15 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 		// Introduce some small jittering to ensure that over time the requests won't start
 		// accumulating at approximately the same time from the set of nodes due to priority and
 		// fairness effect.
+		// 定时同步节点状态
 		go wait.JitterUntil(kl.syncNodeStatus, kl.nodeStatusUpdateFrequency, 0.04, true, wait.NeverStop)
+
 		go kl.fastStatusUpdateOnce()
 
 		// start syncing lease
 		go kl.nodeLeaseController.Run(wait.NeverStop)
 	}
+	// 定时更新runtime状态
 	go wait.Until(kl.updateRuntimeUp, 5*time.Second, wait.NeverStop)
 
 	// Set up iptables util rules
@@ -1536,7 +1543,7 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 		kl.initNetworkUtil()
 	}
 
-	// Start component sync loops.
+	// Start component sync loops. Pod状态管理
 	kl.statusManager.Start()
 
 	// Start syncing RuntimeClasses if enabled.
@@ -1545,6 +1552,8 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 	}
 
 	// Start the pod lifecycle event generator.
+	// 启动PLEG 事件生成器 用于监控容器的状态 生成事件 用于pod的状态更新 以及容器的重启 重启次数的更新 等
+	// pleg -> PodLifecycleEventGenerator pod生命周期事件生成器
 	kl.pleg.Start()
 
 	// Start eventedPLEG only if EventedPLEG feature gate is enabled.
@@ -1552,6 +1561,7 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 		kl.eventedPleg.Start()
 	}
 
+	// 重要 回环Loop，监控外部数据的变化执行Pod相关操作
 	kl.syncLoop(ctx, updates, kl)
 }
 
@@ -2049,6 +2059,8 @@ func (kl *Kubelet) deletePod(pod *v1.Pod) error {
 		return fmt.Errorf("skipping delete because sources aren't ready yet")
 	}
 	klog.V(3).InfoS("Pod has been deleted and must be killed", "pod", klog.KObj(pod), "podUID", pod.UID)
+
+	// 添加到podWorkers，指定类型为kill
 	kl.podWorkers.UpdatePod(UpdatePodOptions{
 		Pod:        pod,
 		UpdateType: kubetypes.SyncPodKill,
@@ -2113,7 +2125,7 @@ func (kl *Kubelet) syncLoop(ctx context.Context, updates <-chan kubetypes.PodUpd
 	// sync interval is defaulted to 10s.
 	syncTicker := time.NewTicker(time.Second)
 	defer syncTicker.Stop()
-	housekeepingTicker := time.NewTicker(housekeepingPeriod)
+	housekeepingTicker := time.NewTicker(housekeepingPeriod) // time.Second * 2
 	defer housekeepingTicker.Stop()
 	plegCh := kl.pleg.Watch()
 	const (
@@ -2141,6 +2153,8 @@ func (kl *Kubelet) syncLoop(ctx context.Context, updates <-chan kubetypes.PodUpd
 		duration = base
 
 		kl.syncLoopMonitor.Store(kl.clock.Now())
+
+		// syncLoopIteration 同步循环迭代
 		if !kl.syncLoopIteration(ctx, updates, handler, syncTicker.C, housekeepingTicker.C, plegCh) {
 			break
 		}
@@ -2180,9 +2194,18 @@ func (kl *Kubelet) syncLoop(ctx context.Context, updates <-chan kubetypes.PodUpd
 //   - housekeepingCh: trigger cleanup of pods
 //   - health manager: sync pods that have failed or in which one or more
 //     containers have failed health checks
+/*
+1、configCh：获取Pod信息的channel，关于Pod相关的事件都从该channel获取；
+2、handler：处理Pod的handler；
+3、syncCh：同步所有等待同步的Pod；
+4、houseKeepingCh：清理Pod的channel；
+5、plegCh：获取PLEG信息，同步Pod。
+*/
 func (kl *Kubelet) syncLoopIteration(ctx context.Context, configCh <-chan kubetypes.PodUpdate, handler SyncHandler,
 	syncCh <-chan time.Time, housekeepingCh <-chan time.Time, plegCh <-chan *pleg.PodLifecycleEvent) bool {
+
 	select {
+	// 监听Pod的变化
 	case u, open := <-configCh:
 		// Update from a config source; dispatch it to the right handler
 		// callback.
@@ -2227,6 +2250,7 @@ func (kl *Kubelet) syncLoopIteration(ctx context.Context, configCh <-chan kubety
 			// PLEG event for a pod; sync it.
 			if pod, ok := kl.podManager.GetPodByUID(e.ID); ok {
 				klog.V(2).InfoS("SyncLoop (PLEG): event for pod", "pod", klog.KObj(pod), "event", e)
+				// 同步Pod
 				handler.HandlePodSyncs([]*v1.Pod{pod})
 			} else {
 				// If the pod no longer exists, ignore the event.
@@ -2430,6 +2454,7 @@ func (kl *Kubelet) HandlePodReconcile(pods []*v1.Pod) {
 func (kl *Kubelet) HandlePodSyncs(pods []*v1.Pod) {
 	start := kl.clock.Now()
 	for _, pod := range pods {
+		// GetMirrorPodByPod returns nil if the pod is not a mirror pod.
 		mirrorPod, _ := kl.podManager.GetMirrorPodByPod(pod)
 		kl.dispatchWork(pod, kubetypes.SyncPodSync, mirrorPod, start)
 	}

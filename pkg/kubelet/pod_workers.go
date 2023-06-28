@@ -557,6 +557,12 @@ func isPodStatusCacheTerminal(status *kubecontainer.PodStatus) bool {
 func (p *podWorkers) UpdatePod(options UpdatePodOptions) {
 	// handle when the pod is an orphan (no config) and we only have runtime status by running only
 	// the terminating part of the lifecycle
+	/*
+		options -> UpdatePodOptions{
+			Pod:        pod,
+			UpdateType: kubetypes.SyncPodKill,
+		}
+	*/
 	pod := options.Pod
 	var isRuntimePod bool
 	if options.RunningPod != nil {
@@ -575,6 +581,7 @@ func (p *podWorkers) UpdatePod(options UpdatePodOptions) {
 	}
 	uid := pod.UID
 
+	// 加锁
 	p.podLock.Lock()
 	defer p.podLock.Unlock()
 
@@ -874,6 +881,7 @@ func (p *podWorkers) allowStaticPodStart(fullname string, uid types.UID) bool {
 	return true
 }
 
+// managePodLoop 管理pod的循环
 func (p *podWorkers) managePodLoop(podUpdates <-chan podWork) {
 	var lastSyncTime time.Time
 	var podStarted bool

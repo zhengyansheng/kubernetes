@@ -487,6 +487,7 @@ func getReservedCPUs(machineInfo *cadvisorapi.MachineInfo, cpus string) (cpuset.
 }
 
 func run(ctx context.Context, s *options.KubeletServer, kubeDeps *kubelet.Dependencies, featureGate featuregate.FeatureGate) (err error) {
+	// eventClient 处理事件的上报；heartbeatClient 处理心跳的上报；csiClient 处理 CSI 相关的
 	// Set global feature gates based on the value on the initial KubeletServer
 	err = utilfeature.DefaultMutableFeatureGate.SetFromMap(s.KubeletConfiguration.FeatureGates)
 	if err != nil {
@@ -1107,11 +1108,13 @@ func setContentTypeForClient(cfg *restclient.Config, contentType string) {
 //
 // Eventually, #2 will be replaced with instances of #3
 func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencies, runOnce bool) error {
+	// 主机名
 	hostname, err := nodeutil.GetHostname(kubeServer.HostnameOverride)
 	if err != nil {
 		return err
 	}
 	// Query the cloud provider for our node name, default to hostname if kubeDeps.Cloud == nil
+	// 节点名
 	nodeName, err := getNodeName(kubeDeps.Cloud, hostname)
 	if err != nil {
 		return err
@@ -1155,6 +1158,7 @@ func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencie
 		return fmt.Errorf("the SeccompDefault feature gate must be enabled in order to use the SeccompDefault configuration")
 	}
 
+	// 创建kubelet参数配置 比较复杂 *****
 	k, err := createAndInitKubelet(kubeServer,
 		kubeDeps,
 		hostname,
@@ -1177,12 +1181,16 @@ func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencie
 	}
 
 	// process pods and exit.
+	// 启动 kubelet
 	if runOnce {
+		// 只启动一次
+		// Updates 是 watch pod的变化
 		if _, err := k.RunOnce(podCfg.Updates()); err != nil {
 			return fmt.Errorf("runonce failed: %w", err)
 		}
 		klog.InfoS("Started kubelet as runonce")
 	} else {
+		// daemon方式启动 一直运行
 		startKubelet(k, podCfg, &kubeServer.KubeletConfiguration, kubeDeps, kubeServer.EnableServer)
 		klog.InfoS("Started kubelet")
 	}
@@ -1247,8 +1255,10 @@ func createAndInitKubelet(kubeServer *options.KubeletServer,
 		return nil, err
 	}
 
+	// event record
 	k.BirthCry()
 
+	// 启动gc
 	k.StartGarbageCollection()
 
 	return k, nil
