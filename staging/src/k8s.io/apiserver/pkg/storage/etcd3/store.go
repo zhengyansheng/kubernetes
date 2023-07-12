@@ -132,29 +132,39 @@ func (s *store) Get(ctx context.Context, key string, opts storage.GetOptions, ou
 	if err != nil {
 		return err
 	}
+
 	startTime := time.Now()
+
+	// 从etcd中获取数据
 	getResp, err := s.client.KV.Get(ctx, preparedKey)
+
+	// 记录metrics
 	metrics.RecordEtcdRequestLatency("get", s.groupResourceString, startTime)
 	if err != nil {
 		return err
 	}
+	// 验证资源版本 如果指定了资源版本, 则需要验证资源版本是否大于等于指定的资源版本
 	if err = s.validateMinimumResourceVersion(opts.ResourceVersion, uint64(getResp.Header.Revision)); err != nil {
 		return err
 	}
 
+	// 如果没有找到, 返回 KeyNotFoundError
 	if len(getResp.Kvs) == 0 {
 		if opts.IgnoreNotFound {
 			return runtime.SetZeroValue(out)
 		}
 		return storage.NewKeyNotFoundError(preparedKey, 0)
 	}
+
 	kv := getResp.Kvs[0]
 
+	// data 是加密的数据
 	data, _, err := s.transformer.TransformFromStorage(ctx, kv.Value, authenticatedDataString(preparedKey))
 	if err != nil {
 		return storage.NewInternalError(err.Error())
 	}
 
+	// 解码
 	return decode(s.codec, s.versioner, data, out, kv.ModRevision)
 }
 
@@ -1016,14 +1026,17 @@ func (s *store) prepareKey(key string) (string, error) {
 // decode decodes value of bytes into object. It will also set the object resource version to rev.
 // On success, objPtr would be set to the object.
 func decode(codec runtime.Codec, versioner storage.Versioner, value []byte, objPtr runtime.Object, rev int64) error {
+	// 检查是否为指针
 	if _, err := conversion.EnforcePtr(objPtr); err != nil {
 		return fmt.Errorf("unable to convert output object to pointer: %v", err)
 	}
+	// 解码
 	_, _, err := codec.Decode(value, nil, objPtr)
 	if err != nil {
 		return err
 	}
 	// being unable to set the version does not prevent the object from being extracted
+	// 更新对象版本
 	if err := versioner.UpdateObject(objPtr, uint64(rev)); err != nil {
 		klog.Errorf("failed to update object version: %v", err)
 	}
