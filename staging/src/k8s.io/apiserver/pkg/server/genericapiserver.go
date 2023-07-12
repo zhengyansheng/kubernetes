@@ -666,8 +666,10 @@ func (s preparedGenericAPIServer) NonBlockingRun(stopCh <-chan struct{}, shutdow
 }
 
 // installAPIResources is a private method for installing the REST storage backing each api groupversionresource
+// installAPIResources是用于安装支持每个api组版本资源的REST存储的专用方法
 func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *APIGroupInfo, openAPIModels *spec.Swagger) error {
 	var resourceInfos []*storageversion.ResourceInfo
+
 	for _, groupVersion := range apiGroupInfo.PrioritizedVersions {
 		if len(apiGroupInfo.VersionedResourcesStorageMap[groupVersion.Version]) == 0 {
 			klog.Warningf("Skipping API %v because it has no resources.", groupVersion)
@@ -694,7 +696,6 @@ func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *A
 		apiGroupVersion.MaxRequestBodyBytes = s.maxRequestBodyBytes
 
 		discoveryAPIResources, r, err := apiGroupVersion.InstallREST(s.Handler.GoRestfulContainer)
-
 		if err != nil {
 			return fmt.Errorf("unable to setup API %v: %v", apiGroupInfo, err)
 		}
@@ -702,7 +703,7 @@ func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *A
 
 		if utilfeature.DefaultFeatureGate.Enabled(features.AggregatedDiscoveryEndpoint) {
 			// Aggregated discovery only aggregates resources under /apis
-			if apiPrefix == APIGroupPrefix {
+			if apiPrefix == APIGroupPrefix { // "/apis"
 				s.AggregatedDiscoveryGroupManager.AddGroupVersion(
 					groupVersion.Group,
 					apidiscoveryv2beta1.APIVersionDiscovery{
@@ -741,6 +742,7 @@ func (s *GenericAPIServer) installAPIResources(apiPrefix string, apiGroupInfo *A
 // The <apiGroupInfo> passed into this function shouldn't be used elsewhere as the
 // underlying storage will be destroyed on this servers shutdown.
 func (s *GenericAPIServer) InstallLegacyAPIGroup(apiPrefix string, apiGroupInfo *APIGroupInfo) error {
+	// apiPrefix /api
 	if !s.legacyAPIGroupPrefixes.Has(apiPrefix) {
 		return fmt.Errorf("%q is not in the allowed legacy API prefixes: %v", apiPrefix, s.legacyAPIGroupPrefixes.List())
 	}
@@ -912,6 +914,7 @@ func getResourceNamesForGroup(apiPrefix string, apiGroupInfo *APIGroupInfo, path
 	resourceNames := make([]string, 0)
 	for _, groupVersion := range apiGroupInfo.PrioritizedVersions {
 		for resource, storage := range apiGroupInfo.VersionedResourcesStorageMap[groupVersion.Version] {
+			// <资源组>/<资源版本>/<资源>/<子资源>
 			path := gpath.Join(apiPrefix, groupVersion.Group, groupVersion.Version, resource)
 			if !pathsToIgnore.HasPrefix(path) {
 				kind, err := genericapi.GetResourceKind(groupVersion, storage, apiGroupInfo.Scheme)

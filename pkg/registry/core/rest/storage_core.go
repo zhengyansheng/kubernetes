@@ -102,6 +102,7 @@ type LegacyRESTStorage struct {
 }
 
 // NewLegacyRESTStorage returns a new LegacyRESTStorage object.
+// 老式的RESTStorage
 func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(apiResourceConfigSource serverstorage.APIResourceConfigSource, restOptionsGetter generic.RESTOptionsGetter) (LegacyRESTStorage, genericapiserver.APIGroupInfo, error) {
 	apiGroupInfo := genericapiserver.APIGroupInfo{
 		PrioritizedVersions:          legacyscheme.Scheme.PrioritizedVersionsForGroup(""),
@@ -283,6 +284,7 @@ func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(apiResourceConfigSource 
 	storage := map[string]rest.Storage{}
 
 	if resource := "pods"; apiResourceConfigSource.ResourceEnabled(corev1.SchemeGroupVersion.WithResource(resource)) {
+		// /pods /pods/attach ......
 		storage[resource] = podStorage.Pod
 		storage[resource+"/attach"] = podStorage.Attach
 		storage[resource+"/status"] = podStorage.Status
@@ -291,9 +293,11 @@ func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(apiResourceConfigSource 
 		storage[resource+"/portforward"] = podStorage.PortForward
 		storage[resource+"/proxy"] = podStorage.Proxy
 		storage[resource+"/binding"] = podStorage.Binding
+		// 驱逐
 		if podStorage.Eviction != nil {
 			storage[resource+"/eviction"] = podStorage.Eviction
 		}
+		// 临时容器
 		storage[resource+"/ephemeralcontainers"] = podStorage.EphemeralContainers
 
 	}
@@ -378,9 +382,11 @@ func (c LegacyRESTStorageProvider) NewLegacyRESTStorage(apiResourceConfigSource 
 	}
 
 	if len(storage) > 0 {
+		// /v1/pods /v1/pods/attach ......
 		apiGroupInfo.VersionedResourcesStorageMap["v1"] = storage
 	}
 
+	// apiGroupInfo 路由信息
 	return restStorage, apiGroupInfo, nil
 }
 

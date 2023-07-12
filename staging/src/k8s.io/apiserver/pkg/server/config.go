@@ -849,6 +849,7 @@ func BuildHandlerChainWithStorageVersionPrecondition(apiHandler http.Handler, c 
 	return DefaultBuildHandlerChain(handler, c)
 }
 
+// DefaultBuildHandlerChain 构建默认的handler chain 用于处理请求 该handler chain包含了认证、授权、流量控制、优先级和公平性等功能
 func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 	handler := filterlatency.TrackCompleted(apiHandler)
 	handler = genericapifilters.WithAuthorization(handler, c.Authorization.Authorizer, c.Serializer)
@@ -906,17 +907,25 @@ func DefaultBuildHandlerChain(apiHandler http.Handler, c *Config) http.Handler {
 	handler = genericapifilters.WithLatencyTrackers(handler)
 	handler = genericapifilters.WithRequestInfo(handler, c.RequestInfoResolver)
 	handler = genericapifilters.WithRequestReceivedTimestamp(handler)
+
+	// 添加 /healthz 路由规则
 	handler = genericapifilters.WithMuxAndDiscoveryComplete(handler, c.lifecycleSignals.MuxAndDiscoveryComplete.Signaled())
+
+	// 异常处理
 	handler = genericfilters.WithPanicRecovery(handler, c.RequestInfoResolver)
+
+	// 携带 audit Uid
 	handler = genericapifilters.WithAuditInit(handler)
 	return handler
 }
 
 func installAPI(s *GenericAPIServer, c *Config) {
 	if c.EnableIndex {
+		// 添加 / 和 /index.html 路由规则
 		routes.Index{}.Install(s.listedPathProvider, s.Handler.NonGoRestfulMux)
 	}
 	if c.EnableProfiling {
+		// 添加 /pprof 路由规则
 		routes.Profiling{}.Install(s.Handler.NonGoRestfulMux)
 		if c.EnableContentionProfiling {
 			goruntime.SetBlockProfileRate(1)
@@ -933,6 +942,7 @@ func installAPI(s *GenericAPIServer, c *Config) {
 	}
 
 	if c.EnableMetrics {
+		// 添加 /metrics 路由规则
 		if c.EnableProfiling {
 			routes.MetricsWithReset{}.Install(s.Handler.NonGoRestfulMux)
 			if utilfeature.DefaultFeatureGate.Enabled(features.ComponentSLIs) {
@@ -946,9 +956,11 @@ func installAPI(s *GenericAPIServer, c *Config) {
 		}
 	}
 
+	// 添加 /version 路由规则
 	routes.Version{Version: c.Version}.Install(s.Handler.GoRestfulContainer)
 
 	if c.EnableDiscovery {
+		// 添加 服务发现 路由规则
 		if utilfeature.DefaultFeatureGate.Enabled(genericfeatures.AggregatedDiscoveryEndpoint) {
 			wrapped := discoveryendpoint.WrapAggregatedDiscoveryToHandler(s.DiscoveryGroupManager, s.AggregatedDiscoveryGroupManager)
 			s.Handler.GoRestfulContainer.Add(wrapped.GenerateWebService("/apis", metav1.APIGroupList{}))

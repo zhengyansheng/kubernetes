@@ -46,6 +46,7 @@ import (
 	"k8s.io/apiserver/pkg/storageversion"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	versioninfo "k8s.io/component-base/version"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/structured-merge-diff/v4/fieldpath"
 )
 
@@ -185,6 +186,8 @@ func (a *APIInstaller) Install() ([]metav1.APIResource, []*storageversion.Resour
 	var apiResources []metav1.APIResource
 	var resourceInfos []*storageversion.ResourceInfo
 	var errors []error
+
+	// 创建前缀为 prefix/group/version 的newWebService
 	ws := a.newWebService()
 
 	// Register the paths in a deterministic (sorted) order to get a deterministic swagger spec.
@@ -195,11 +198,48 @@ func (a *APIInstaller) Install() ([]metav1.APIResource, []*storageversion.Resour
 		i++
 	}
 	sort.Strings(paths)
+
+	// 遍历指定Version, Group下的Resource路径，注册其 handler
 	for _, path := range paths {
+		// 注册资源handler
+		klog.Infof("-----> (APIInstaller.Install) path: %v", path)
+		/*
+			...
+			path: pods
+			path: pods/attach
+			path: pods/binding
+			path: pods/ephemeralcontainers
+			path: pods/eviction
+			path: pods/exec
+			path: pods/log
+			path: pods/portforward
+			path: pods/proxy
+			path: pods/status
+			path: podtemplates
+			......
+
+
+		*/
+
 		apiResource, resourceInfo, err := a.registerResourceHandlers(path, a.group.Storage[path], ws)
 		if err != nil {
 			errors = append(errors, fmt.Errorf("error in registering resource: %s, %v", path, err))
 		}
+		/*
+			apiResources ->
+			 {
+				Name:pods
+				SingularName:pod
+				Namespaced:true
+				Group:
+				Version:
+				Kind:Pod
+				Verbs:[create delete deletecollection get list patch update watch]
+				ShortNames:[po]
+				Categories:[all]
+				StorageVersionHash:xPOwRZ+Yhw8=
+			}
+		*/
 		if apiResource != nil {
 			apiResources = append(apiResources, *apiResource)
 		}
@@ -207,6 +247,8 @@ func (a *APIInstaller) Install() ([]metav1.APIResource, []*storageversion.Resour
 			resourceInfos = append(resourceInfos, resourceInfo)
 		}
 	}
+	//klog.Infof("-----> (APIInstaller.Install) apiResources: %+v", apiResources)
+	//klog.Infof("-----> (APIInstaller.Install) resourceInfos: %+v", resourceInfos)
 	return apiResources, resourceInfos, ws, errors
 }
 

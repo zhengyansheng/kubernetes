@@ -84,6 +84,7 @@ type Controller struct {
 }
 
 // NewBootstrapController returns a controller for watching the core capabilities of the master
+// NewBootstrapController返回一个用于监视主机核心功能的控制器
 func (c *completedConfig) NewBootstrapController(legacyRESTStorage corerest.LegacyRESTStorage, client kubernetes.Interface) (*Controller, error) {
 	_, publicServicePort, err := c.GenericConfig.SecureServing.HostPort()
 	if err != nil {
@@ -144,8 +145,7 @@ func (c *Controller) PreShutdownHook() error {
 	return nil
 }
 
-// Start begins the core controller loops that must exist for bootstrapping
-// a cluster.
+// Start begins the core controller loops that must exist for bootstrapping a cluster.
 func (c *Controller) Start() {
 	if c.runner != nil {
 		return
@@ -174,9 +174,11 @@ func (c *Controller) Start() {
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 
+	// 运行修复集群IP
 	runRepairClusterIPs := func(stopCh chan struct{}) {
 		repairClusterIPs.RunUntil(wg.Done, stopCh)
 	}
+	// 运行修复节点端口
 	runRepairNodePorts := func(stopCh chan struct{}) {
 		repairNodePorts.RunUntil(wg.Done, stopCh)
 	}

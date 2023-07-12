@@ -58,8 +58,7 @@ type Storage interface {
 	New() runtime.Object
 
 	// Destroy cleans up its resources on shutdown.
-	// Destroy has to be implemented in thread-safe way and be prepared
-	// for being called more than once.
+	// Destroy has to be implemented in thread-safe way and be prepared for being called more than once.
 	Destroy()
 }
 

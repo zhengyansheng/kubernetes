@@ -697,7 +697,7 @@ func (m *kubeGenericRuntimeManager) killContainer(ctx context.Context, pod *v1.P
 		gracePeriod = gracePeriod - m.executePreStopHook(ctx, pod, containerID, containerSpec, gracePeriod)
 	}
 	// always give containers a minimal shutdown window to avoid unnecessary SIGKILLs
-	if gracePeriod < minimumGracePeriodInSeconds {
+	if gracePeriod < minimumGracePeriodInSeconds { // 2s
 		gracePeriod = minimumGracePeriodInSeconds
 	}
 	if gracePeriodOverride != nil {

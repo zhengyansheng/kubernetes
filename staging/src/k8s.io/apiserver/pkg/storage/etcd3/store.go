@@ -71,16 +71,16 @@ func (d authenticatedDataString) AuthenticatedData() []byte {
 var _ value.Context = authenticatedDataString("")
 
 type store struct {
-	client              *clientv3.Client
-	codec               runtime.Codec
-	versioner           storage.Versioner
-	transformer         value.Transformer
-	pathPrefix          string
-	groupResource       schema.GroupResource
-	groupResourceString string
-	watcher             *watcher
-	pagingEnabled       bool
-	leaseManager        *leaseManager
+	client              *clientv3.Client     // client for etcd3
+	codec               runtime.Codec        // 编解码器 用于序列化和反序列化
+	versioner           storage.Versioner    // 版本管理器
+	transformer         value.Transformer    // 转换器
+	pathPrefix          string               // etcd中的路径前缀
+	groupResource       schema.GroupResource // 资源组
+	groupResourceString string               // 资源组字符串
+	watcher             *watcher             // 监听器
+	pagingEnabled       bool                 // 是否启用分页
+	leaseManager        *leaseManager        // 租约管理器
 }
 
 type objState struct {

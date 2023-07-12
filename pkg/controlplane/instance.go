@@ -572,6 +572,7 @@ func (m *Instance) InstallLegacyAPI(c *completedConfig, restOptionsGetter generi
 		ServiceAccountMaxExpiration: c.ExtraConfig.ServiceAccountMaxExpiration,
 		APIAudiences:                c.GenericConfig.Authentication.APIAudiences,
 	}
+	// 创建老式的REST
 	legacyRESTStorage, apiGroupInfo, err := legacyRESTStorageProvider.NewLegacyRESTStorage(c.ExtraConfig.APIResourceConfigSource, restOptionsGetter)
 	if err != nil {
 		return fmt.Errorf("error building core storage: %v", err)
@@ -581,14 +582,21 @@ func (m *Instance) InstallLegacyAPI(c *completedConfig, restOptionsGetter generi
 	}
 
 	controllerName := "bootstrap-controller"
+	// clientSet
 	client := kubernetes.NewForConfigOrDie(c.GenericConfig.LoopbackClientConfig)
+	// 创建bootstrapController
 	bootstrapController, err := c.NewBootstrapController(legacyRESTStorage, client)
 	if err != nil {
 		return fmt.Errorf("error creating bootstrap controller: %v", err)
 	}
+	// 添加启动后钩子
 	m.GenericAPIServer.AddPostStartHookOrDie(controllerName, bootstrapController.PostStartHook)
+	// 添加关闭前钩子
 	m.GenericAPIServer.AddPreShutdownHookOrDie(controllerName, bootstrapController.PreShutdownHook)
 
+	// 注册API组
+	// /api/v1/pods /api/v1/pods/attach
+	// DefaultLegacyAPIPrefix = "/api"
 	if err := m.GenericAPIServer.InstallLegacyAPIGroup(genericapiserver.DefaultLegacyAPIPrefix, &apiGroupInfo); err != nil {
 		return fmt.Errorf("error in registering group versions: %v", err)
 	}

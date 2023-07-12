@@ -3,6 +3,8 @@ package ptr
 import (
 	"fmt"
 	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type DeleteOptions struct {
@@ -28,6 +30,6 @@ func TestPtr(t *testing.T) {
 }
 
 func TestPtr2(t *testing.T) {
-	i := new(int64)
-	t.Log(*i)
+	now := metav1.Now()
+	t.Log(now)
 }

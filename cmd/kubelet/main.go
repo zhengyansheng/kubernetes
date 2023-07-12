@@ -13,7 +13,7 @@ func main() {
 	//fmt.Printf("kubeletFlags: %+v\n", kubeletFlags)
 
 	const connectionTimeout = 2 * time.Minute
-	runtimeEndpoint := "unix:///run/containerd/containerd.sock"
+	runtimeEndpoint := "unix:///run/containerd/containerd.sock" // /run/containerd/containerd.sock
 	r, err := remote.NewRemoteRuntimeService(runtimeEndpoint, connectionTimeout, oteltrace.NewNoopTracerProvider())
 	if err != nil {
 		panic(err)
