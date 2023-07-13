@@ -93,19 +93,20 @@ type ServerRunOptions struct {
 func NewServerRunOptions() *ServerRunOptions {
 	s := ServerRunOptions{
 		GenericServerRunOptions: genericoptions.NewServerRunOptions(),
-		Etcd:                    genericoptions.NewEtcdOptions(storagebackend.NewDefaultConfig(kubeoptions.DefaultEtcdPathPrefix, nil)),
-		SecureServing:           kubeoptions.NewSecureServingOptions(),
-		Audit:                   genericoptions.NewAuditOptions(),
-		Features:                genericoptions.NewFeatureOptions(),
-		Admission:               kubeoptions.NewAdmissionOptions(),
-		Authentication:          kubeoptions.NewBuiltInAuthenticationOptions().WithAll(),
-		Authorization:           kubeoptions.NewBuiltInAuthorizationOptions(),
-		CloudProvider:           kubeoptions.NewCloudProviderOptions(),
-		APIEnablement:           genericoptions.NewAPIEnablementOptions(),
-		EgressSelector:          genericoptions.NewEgressSelectorOptions(),
-		Metrics:                 metrics.NewOptions(),
-		Logs:                    logs.NewOptions(),
-		Traces:                  genericoptions.NewTracingOptions(),
+		// etcd的key的默认前缀
+		Etcd:           genericoptions.NewEtcdOptions(storagebackend.NewDefaultConfig(kubeoptions.DefaultEtcdPathPrefix, nil)),
+		SecureServing:  kubeoptions.NewSecureServingOptions(),
+		Audit:          genericoptions.NewAuditOptions(),
+		Features:       genericoptions.NewFeatureOptions(),
+		Admission:      kubeoptions.NewAdmissionOptions(),
+		Authentication: kubeoptions.NewBuiltInAuthenticationOptions().WithAll(),
+		Authorization:  kubeoptions.NewBuiltInAuthorizationOptions(),
+		CloudProvider:  kubeoptions.NewCloudProviderOptions(),
+		APIEnablement:  genericoptions.NewAPIEnablementOptions(),
+		EgressSelector: genericoptions.NewEgressSelectorOptions(),
+		Metrics:        metrics.NewOptions(),
+		Logs:           logs.NewOptions(),
+		Traces:         genericoptions.NewTracingOptions(),
 
 		EnableLogsHandler:      true,
 		EventTTL:               1 * time.Hour,
@@ -133,6 +134,7 @@ func NewServerRunOptions() *ServerRunOptions {
 	}
 
 	// Overwrite the default for storage data format.
+	// 存储到etcd种的数据格式
 	s.Etcd.DefaultStorageMediaType = "application/vnd.kubernetes.protobuf"
 
 	return &s

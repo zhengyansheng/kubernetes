@@ -36,8 +36,7 @@ type StorageDecorator func(
 	trigger storage.IndexerFuncs,
 	indexers *cache.Indexers) (storage.Interface, factory.DestroyFunc, error)
 
-// UndecoratedStorage returns the given a new storage from the given config
-// without any decoration.
+// UndecoratedStorage returns the given a new storage from the given config without any decoration.
 func UndecoratedStorage(
 	config *storagebackend.ConfigForResource,
 	resourcePrefix string,

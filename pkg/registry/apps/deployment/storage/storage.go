@@ -92,11 +92,14 @@ type REST struct {
 // NewREST returns a RESTStorage object that will work against deployments.
 func NewREST(optsGetter generic.RESTOptionsGetter) (*REST, *StatusREST, *RollbackREST, error) {
 	store := &genericregistry.Store{
-		NewFunc:                   func() runtime.Object { return &apps.Deployment{} },
-		NewListFunc:               func() runtime.Object { return &apps.DeploymentList{} },
-		DefaultQualifiedResource:  apps.Resource("deployments"),
+		NewFunc:     func() runtime.Object { return &apps.Deployment{} },
+		NewListFunc: func() runtime.Object { return &apps.DeploymentList{} },
+		// DefaultQualifiedResource 默认的资源名 deployments 用于生成路径 /apis/apps/v1/namespaces/{namespace}/deployments
+		DefaultQualifiedResource: apps.Resource("deployments"),
+		// DefaultQualifiedResource 默认的资源名 deployment 用于生成路径 /apis/apps/v1/namespaces/{namespace}/deployments/{name}
 		SingularQualifiedResource: apps.Resource("deployment"),
 
+		// 创建资源时的策略
 		CreateStrategy:      deployment.Strategy,
 		UpdateStrategy:      deployment.Strategy,
 		DeleteStrategy:      deployment.Strategy,

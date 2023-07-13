@@ -75,7 +75,7 @@ type store struct {
 	codec               runtime.Codec        // 编解码器 用于序列化和反序列化
 	versioner           storage.Versioner    // 版本管理器
 	transformer         value.Transformer    // 转换器
-	pathPrefix          string               // etcd中的路径前缀
+	pathPrefix          string               // etcd中的路径前缀，保证prefix以'/'开头 以'/'结尾
 	groupResource       schema.GroupResource // 资源组
 	groupResourceString string               // 资源组字符串
 	watcher             *watcher             // 监听器
@@ -98,6 +98,8 @@ func New(c *clientv3.Client, codec runtime.Codec, newFunc func() runtime.Object,
 
 func newStore(c *clientv3.Client, codec runtime.Codec, newFunc func() runtime.Object, prefix string, groupResource schema.GroupResource, transformer value.Transformer, pagingEnabled bool, leaseManagerConfig LeaseManagerConfig) *store {
 	versioner := storage.APIObjectVersioner{}
+
+	// 保证prefix以'/'开头 以'/'结尾
 	// for compatibility with etcd2 impl.
 	// no-op for default prefix of '/registry'.
 	// keeps compatibility with etcd2 impl for custom prefixes that don't start with '/'
@@ -174,6 +176,7 @@ func (s *store) Create(ctx context.Context, key string, obj, out runtime.Object,
 	if err != nil {
 		return err
 	}
+	// 跟踪
 	ctx, span := tracing.Start(ctx, "Create etcd3",
 		attribute.String("audit-id", audit.GetAuditIDTruncated(ctx)),
 		attribute.String("key", key),
@@ -181,6 +184,7 @@ func (s *store) Create(ctx context.Context, key string, obj, out runtime.Object,
 		attribute.String("resource", s.groupResourceString),
 	)
 	defer span.End(500 * time.Millisecond)
+
 	if version, err := s.versioner.ObjectResourceVersion(obj); err == nil && version != 0 {
 		return errors.New("resourceVersion should not be set on objects to be created")
 	}
@@ -188,6 +192,8 @@ func (s *store) Create(ctx context.Context, key string, obj, out runtime.Object,
 		return fmt.Errorf("PrepareObjectForStorage failed: %v", err)
 	}
 	span.AddEvent("About to Encode")
+
+	// 编码
 	data, err := runtime.Encode(s.codec, obj)
 	if err != nil {
 		span.AddEvent("Encode failed", attribute.Int("len", len(data)), attribute.String("err", err.Error()))
@@ -195,6 +201,7 @@ func (s *store) Create(ctx context.Context, key string, obj, out runtime.Object,
 	}
 	span.AddEvent("Encode succeeded", attribute.Int("len", len(data)))
 
+	// 获取ttl选项
 	opts, err := s.ttlOpts(ctx, int64(ttl))
 	if err != nil {
 		return err
@@ -208,11 +215,15 @@ func (s *store) Create(ctx context.Context, key string, obj, out runtime.Object,
 	span.AddEvent("TransformToStorage succeeded")
 
 	startTime := time.Now()
+
+	// 事务操作
 	txnResp, err := s.client.KV.Txn(ctx).If(
 		notFound(preparedKey),
 	).Then(
 		clientv3.OpPut(preparedKey, string(newData), opts...),
 	).Commit()
+
+	// 记录metrics
 	metrics.RecordEtcdRequestLatency("create", s.groupResourceString, startTime)
 	if err != nil {
 		span.AddEvent("Txn call failed", attribute.String("err", err.Error()))
@@ -240,6 +251,7 @@ func (s *store) Create(ctx context.Context, key string, obj, out runtime.Object,
 func (s *store) Delete(
 	ctx context.Context, key string, out runtime.Object, preconditions *storage.Preconditions,
 	validateDeletion storage.ValidateObjectFunc, cachedExistingObject runtime.Object) error {
+	// 验证删除条件
 	preparedKey, err := s.prepareKey(key)
 	if err != nil {
 		return err
@@ -1000,6 +1012,7 @@ func (s *store) validateMinimumResourceVersion(minimumResourceVersion string, ac
 }
 
 func (s *store) prepareKey(key string) (string, error) {
+	// 无效的key
 	if key == ".." ||
 		strings.HasPrefix(key, "../") ||
 		strings.HasSuffix(key, "/..") ||
