@@ -351,6 +351,8 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	nodeStatusMaxImages int32,
 	seccompDefault bool,
 ) (*Kubelet, error) {
+
+	// 创建ctx
 	ctx := context.Background()
 	logger := klog.TODO()
 
@@ -436,6 +438,7 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	if err != nil {
 		return nil, err
 	}
+	// 驱逐的配置
 	evictionConfig := eviction.Config{
 		PressureTransitionPeriod: kubeCfg.EvictionPressureTransitionPeriod.Duration,
 		MaxPodGracePeriodSeconds: int64(kubeCfg.EvictionMaxPodGracePeriod),
@@ -601,9 +604,13 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 
 	imageBackOff := flowcontrol.NewBackOff(backOffPeriod, MaxContainerBackOff)
 
+	// 存活探针
 	klet.livenessManager = proberesults.NewManager()
+	// 就绪探针
 	klet.readinessManager = proberesults.NewManager()
+	// 启动探针
 	klet.startupManager = proberesults.NewManager()
+	// pod 缓存
 	klet.podCache = kubecontainer.NewCache()
 
 	// podManager is also responsible for keeping secretManager and configMapManager contents up-to-date.
@@ -1530,6 +1537,7 @@ func (kl *Kubelet) Run(updates <-chan kubetypes.PodUpdate) {
 		// 定时同步节点状态
 		go wait.JitterUntil(kl.syncNodeStatus, kl.nodeStatusUpdateFrequency, 0.04, true, wait.NeverStop)
 
+		// 快速更新一次节点状态
 		go kl.fastStatusUpdateOnce()
 
 		// start syncing lease
@@ -1897,6 +1905,7 @@ func (kl *Kubelet) syncTerminatingPod(_ context.Context, pod *v1.Pod, podStatus 
 		klog.V(4).InfoS("Pod terminating with grace period", "pod", klog.KObj(pod), "podUID", pod.UID, "gracePeriod", nil)
 	}
 
+	// 停止存活探针和启动探针
 	kl.probeManager.StopLivenessAndStartup(pod)
 
 	p := kubecontainer.ConvertPodStatusToRunningPod(kl.getRuntime().Type(), podStatus)
@@ -1907,6 +1916,7 @@ func (kl *Kubelet) syncTerminatingPod(_ context.Context, pod *v1.Pod, podStatus 
 		return err
 	}
 
+	// 一旦容器停止，我们就可以停止探测活性和可读性。
 	// Once the containers are stopped, we can stop probing for liveness and readiness.
 	// TODO: once a pod is terminal, certain probes (liveness exec) could be stopped immediately after
 	//   the detection of a container shutdown or (for readiness) after the first failure. Tracked as
@@ -2125,9 +2135,12 @@ func (kl *Kubelet) syncLoop(ctx context.Context, updates <-chan kubetypes.PodUpd
 	// sync interval is defaulted to 10s.
 	syncTicker := time.NewTicker(time.Second)
 	defer syncTicker.Stop()
+
 	housekeepingTicker := time.NewTicker(housekeepingPeriod) // time.Second * 2
 	defer housekeepingTicker.Stop()
+
 	plegCh := kl.pleg.Watch()
+
 	const (
 		base   = 100 * time.Millisecond
 		max    = 5 * time.Second
@@ -2244,7 +2257,6 @@ func (kl *Kubelet) syncLoopIteration(ctx context.Context, configCh <-chan kubety
 		}
 
 		kl.sourcesReady.AddSource(u.Source)
-
 	case e := <-plegCh:
 		if isSyncPodWorthy(e) {
 			// PLEG event for a pod; sync it.
@@ -2397,8 +2409,10 @@ func (kl *Kubelet) HandlePodAdditions(pods []*v1.Pod) {
 func (kl *Kubelet) HandlePodUpdates(pods []*v1.Pod) {
 	start := kl.clock.Now()
 	for _, pod := range pods {
+
+		// 更新到map中
 		kl.podManager.UpdatePod(pod)
-		if kubetypes.IsMirrorPod(pod) {
+		if kubetypes.IsMirrorPod(pod) { // false
 			kl.handleMirrorPod(pod, start)
 			continue
 		}
@@ -2412,6 +2426,7 @@ func (kl *Kubelet) HandlePodUpdates(pods []*v1.Pod) {
 func (kl *Kubelet) HandlePodRemoves(pods []*v1.Pod) {
 	start := kl.clock.Now()
 	for _, pod := range pods {
+		// Remove the pod from the pod manager.
 		kl.podManager.DeletePod(pod)
 		if kubetypes.IsMirrorPod(pod) {
 			kl.handleMirrorPod(pod, start)

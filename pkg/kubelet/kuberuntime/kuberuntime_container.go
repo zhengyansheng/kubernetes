@@ -585,13 +585,19 @@ func toKubeContainerStatus(status *runtimeapi.ContainerStatus, runtimeName strin
 
 // executePreStopHook runs the pre-stop lifecycle hooks if applicable and returns the duration it takes.
 func (m *kubeGenericRuntimeManager) executePreStopHook(ctx context.Context, pod *v1.Pod, containerID kubecontainer.ContainerID, containerSpec *v1.Container, gracePeriod int64) int64 {
+	// 记录日志
 	klog.V(3).InfoS("Running preStop hook", "pod", klog.KObj(pod), "podUID", pod.UID, "containerName", containerSpec.Name, "containerID", containerID.String())
 
+	// 记录开始时间
 	start := metav1.Now()
+
+	// 创建一个channel 执行hook
 	done := make(chan struct{})
+
 	go func() {
 		defer close(done)
 		defer utilruntime.HandleCrash()
+		// 进入容器执行hook
 		if _, err := m.runner.Run(ctx, containerID, pod, containerSpec, containerSpec.Lifecycle.PreStop); err != nil {
 			klog.ErrorS(err, "PreStop hook failed", "pod", klog.KObj(pod), "podUID", pod.UID,
 				"containerName", containerSpec.Name, "containerID", containerID.String())
@@ -600,6 +606,7 @@ func (m *kubeGenericRuntimeManager) executePreStopHook(ctx context.Context, pod 
 		}
 	}()
 
+	// 等待hook执行完成
 	select {
 	case <-time.After(time.Duration(gracePeriod) * time.Second):
 		klog.V(2).InfoS("PreStop hook not completed in grace period", "pod", klog.KObj(pod), "podUID", pod.UID,
@@ -609,6 +616,7 @@ func (m *kubeGenericRuntimeManager) executePreStopHook(ctx context.Context, pod 
 			"containerName", containerSpec.Name, "containerID", containerID.String())
 	}
 
+	// 计算hook执行时间
 	return int64(metav1.Now().Sub(start.Time).Seconds())
 }
 
@@ -685,6 +693,7 @@ func (m *kubeGenericRuntimeManager) killContainer(ctx context.Context, pod *v1.P
 	if len(message) == 0 {
 		message = fmt.Sprintf("Stopping container %s", containerSpec.Name)
 	}
+	// 记录事件
 	m.recordContainerEvent(pod, containerSpec, containerID.ID, v1.EventTypeNormal, events.KillingContainer, message)
 
 	// Run internal pre-stop lifecycle hook
@@ -694,6 +703,7 @@ func (m *kubeGenericRuntimeManager) killContainer(ctx context.Context, pod *v1.P
 
 	// Run the pre-stop lifecycle hooks if applicable and if there is enough time to run it
 	if containerSpec.Lifecycle != nil && containerSpec.Lifecycle.PreStop != nil && gracePeriod > 0 {
+		// 执行 preStop hook
 		gracePeriod = gracePeriod - m.executePreStopHook(ctx, pod, containerID, containerSpec, gracePeriod)
 	}
 	// always give containers a minimal shutdown window to avoid unnecessary SIGKILLs
@@ -709,6 +719,7 @@ func (m *kubeGenericRuntimeManager) killContainer(ctx context.Context, pod *v1.P
 	klog.V(2).InfoS("Killing container with a grace period", "pod", klog.KObj(pod), "podUID", pod.UID,
 		"containerName", containerName, "containerID", containerID.String(), "gracePeriod", gracePeriod)
 
+	// 停止容器
 	err := m.runtimeService.StopContainer(ctx, containerID.ID, gracePeriod)
 	if err != nil && !crierror.IsNotFound(err) {
 		klog.ErrorS(err, "Container termination failed with gracePeriod", "pod", klog.KObj(pod), "podUID", pod.UID,
@@ -733,6 +744,7 @@ func (m *kubeGenericRuntimeManager) killContainersWithSyncResult(ctx context.Con
 			defer wg.Done()
 
 			killContainerResult := kubecontainer.NewSyncResult(kubecontainer.KillContainer, container.Name)
+			// 杀死容器 "Unknown"
 			if err := m.killContainer(ctx, pod, container.ID, container.Name, "", reasonUnknown, gracePeriodOverride); err != nil {
 				killContainerResult.Fail(kubecontainer.ErrKillContainer, err.Error())
 				// Use runningPod for logging as the pod passed in could be *nil*.
@@ -984,10 +996,12 @@ func (m *kubeGenericRuntimeManager) DeleteContainer(ctx context.Context, contain
 
 // setTerminationGracePeriod determines the grace period to use when killing a container
 func setTerminationGracePeriod(pod *v1.Pod, containerSpec *v1.Container, containerName string, containerID kubecontainer.ContainerID, reason containerKillReason) int64 {
-	gracePeriod := int64(minimumGracePeriodInSeconds)
+	// reason -> "Unknown"
+	gracePeriod := int64(minimumGracePeriodInSeconds) // 2
 	switch {
 	case pod.DeletionGracePeriodSeconds != nil:
 		return *pod.DeletionGracePeriodSeconds
+		// 默认是30s
 	case pod.Spec.TerminationGracePeriodSeconds != nil:
 		switch reason {
 		case reasonStartupProbe:
@@ -999,6 +1013,7 @@ func setTerminationGracePeriod(pod *v1.Pod, containerSpec *v1.Container, contain
 				return *containerSpec.LivenessProbe.TerminationGracePeriodSeconds
 			}
 		}
+		// 宽限期 default -> 30s
 		return *pod.Spec.TerminationGracePeriodSeconds
 	}
 	return gracePeriod

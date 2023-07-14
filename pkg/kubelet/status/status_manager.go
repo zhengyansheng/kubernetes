@@ -613,8 +613,11 @@ func updateLastTransitionTime(status, oldStatus *v1.PodStatus, conditionType v1.
 
 // deletePodStatus simply removes the given pod from the status cache.
 func (m *manager) deletePodStatus(uid types.UID) {
+	// 加锁
 	m.podStatusesLock.Lock()
 	defer m.podStatusesLock.Unlock()
+
+	// 删除
 	delete(m.podStatuses, uid)
 	m.podStartupLatencyHelper.DeletePodStartupState(uid)
 }
@@ -743,6 +746,7 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 	m.apiStatusVersions[kubetypes.MirrorPodUID(pod.UID)] = status.version
 
 	// We don't handle graceful deletion of mirror pods.
+	// 我们不处理镜像pod的优雅删除
 	if m.canBeDeleted(pod, status.status) {
 		// 立即删除参数
 		deleteOptions := metav1.DeleteOptions{
@@ -751,7 +755,7 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 			// newly created pod with the same name and namespace.
 			Preconditions: metav1.NewUIDPreconditions(string(pod.UID)),
 		}
-		// 删除
+		// 先删除
 		err = m.kubeClient.CoreV1().Pods(pod.Namespace).Delete(context.TODO(), pod.Name, deleteOptions)
 		if err != nil {
 			klog.InfoS("Failed to delete status for pod", "pod", klog.KObj(pod), "err", err)
@@ -759,6 +763,7 @@ func (m *manager) syncPod(uid types.UID, status versionedPodStatus) {
 		}
 		klog.V(3).InfoS("Pod fully terminated and removed from etcd", "pod", klog.KObj(pod))
 
+		// 删除pod状态
 		m.deletePodStatus(uid)
 	}
 }

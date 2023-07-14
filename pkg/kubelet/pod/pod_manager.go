@@ -144,8 +144,10 @@ func (pm *basicManager) AddPod(pod *v1.Pod) {
 }
 
 func (pm *basicManager) UpdatePod(pod *v1.Pod) {
+	// 加锁
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
+
 	pm.updatePodsInternal(pod)
 }
 
@@ -172,7 +174,7 @@ func (pm *basicManager) updatePodsInternal(pods ...*v1.Pod) {
 		podFullName := kubecontainer.GetPodFullName(pod)
 		// This logic relies on a static pod and its mirror to have the same name.
 		// It is safe to type convert here due to the IsMirrorPod guard.
-		if kubetypes.IsMirrorPod(pod) {
+		if kubetypes.IsMirrorPod(pod) { // false
 			mirrorPodUID := kubetypes.MirrorPodUID(pod.UID)
 			pm.mirrorPodByUID[mirrorPodUID] = pod
 			pm.mirrorPodByFullName[podFullName] = pod

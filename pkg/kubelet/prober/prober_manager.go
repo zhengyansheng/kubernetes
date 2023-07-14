@@ -212,7 +212,10 @@ func (m *manager) AddPod(pod *v1.Pod) {
 	}
 }
 
+// StopLivenessAndStartup handles stopping liveness and startup probes during termination.
+// 在终止期间停止存活探针和启动探针
 func (m *manager) StopLivenessAndStartup(pod *v1.Pod) {
+	// 加锁
 	m.workerLock.RLock()
 	defer m.workerLock.RUnlock()
 

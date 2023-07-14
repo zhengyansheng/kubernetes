@@ -856,9 +856,11 @@ func containerResourceRuntimeValue(fs *v1.ResourceFieldSelector, pod *v1.Pod, co
 // terminate newly created containers and sandboxes.
 func (kl *Kubelet) killPod(ctx context.Context, pod *v1.Pod, p kubecontainer.Pod, gracePeriodOverride *int64) error {
 	// Call the container runtime KillPod method which stops all known running containers of the pod
+	// 调用容器运行时KillPod方法，该方法停止pod的所有已知运行容器
 	if err := kl.containerRuntime.KillPod(ctx, pod, p, gracePeriodOverride); err != nil {
 		return err
 	}
+	// 更新QoS cgroups 信息
 	if err := kl.containerManager.UpdateQOSCgroups(); err != nil {
 		klog.V(2).InfoS("Failed to update QoS cgroups while killing pod", "err", err)
 	}
@@ -1150,6 +1152,7 @@ func (kl *Kubelet) HandlePodCleanups(ctx context.Context) error {
 			// know that another pod wasn't started in the background so we are safe to terminate the
 			// unknown pods.
 			if _, ok := allPodsByUID[runningPod.ID]; !ok {
+				// 清理孤儿pod容器
 				klog.V(3).InfoS("Clean up orphaned pod containers", "podUID", runningPod.ID)
 				one := int64(1)
 				kl.podWorkers.UpdatePod(UpdatePodOptions{

@@ -92,12 +92,15 @@ type PodWorkType int
 
 const (
 	// SyncPodWork is when the pod is expected to be started and running.
+	// SyncPodWork是预计启动和运行pod的时间
 	SyncPodWork PodWorkType = iota
 	// TerminatingPodWork is when the pod is no longer being set up, but some
 	// containers may be running and are being torn down.
+	// TerminatingPodWork是指不再设置pod，但一些容器可能正在运行并被拆除。
 	TerminatingPodWork
 	// TerminatedPodWork indicates the pod is stopped, can have no more running
 	// containers, and any foreground cleanup can be executed.
+	// TerminatedPodWork表示pod已停止，不能再运行容器，并且可以执行任何前台清理。
 	TerminatedPodWork
 )
 
@@ -754,6 +757,7 @@ func (p *podWorkers) UpdatePod(options UpdatePodOptions) {
 		// comment in syncPod.
 		go func() {
 			defer runtime.HandleCrash()
+			// 核心逻辑
 			p.managePodLoop(outCh)
 		}()
 	}
@@ -1171,8 +1175,8 @@ func (p *podWorkers) completeUnstartedTerminated(pod *v1.Pod) {
 	}
 }
 
-// completeWork requeues on error or the next sync interval and then immediately executes any pending
-// work.
+// completeWork requeues on error or the next sync interval and then immediately executes any pending work.
+// completeWork在出现错误或下一个同步间隔时重新排队，然后立即执行任何挂起的工作
 func (p *podWorkers) completeWork(pod *v1.Pod, phaseTransition bool, syncErr error) {
 	// Requeue the last update if the last sync returned error.
 	switch {
@@ -1194,8 +1198,10 @@ func (p *podWorkers) completeWork(pod *v1.Pod, phaseTransition bool, syncErr err
 // completeWorkQueueNext holds the lock and either queues the next work item for the worker or
 // clears the working status.
 func (p *podWorkers) completeWorkQueueNext(uid types.UID) {
+	// 加锁
 	p.podLock.Lock()
 	defer p.podLock.Unlock()
+
 	if workUpdate, exists := p.lastUndeliveredWorkUpdate[uid]; exists {
 		p.podUpdates[uid] <- workUpdate
 		delete(p.lastUndeliveredWorkUpdate, uid)

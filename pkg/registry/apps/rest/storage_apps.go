@@ -54,6 +54,8 @@ func (p StorageProvider) v1Storage(apiResourceConfigSource serverstorage.APIReso
 
 	// deployments
 	if resource := "deployments"; apiResourceConfigSource.ResourceEnabled(appsapiv1.SchemeGroupVersion.WithResource(resource)) {
+		// q: NewStorage 是什么？
+		//
 		deploymentStorage, err := deploymentstore.NewStorage(restOptionsGetter)
 		if err != nil {
 			return storage, err
