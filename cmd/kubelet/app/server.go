@@ -124,6 +124,8 @@ const (
 func NewKubeletCommand() *cobra.Command {
 	cleanFlagSet := pflag.NewFlagSet(componentKubelet, pflag.ContinueOnError)
 	cleanFlagSet.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
+
+	// 初始化 kubelet flags
 	kubeletFlags := options.NewKubeletFlags()
 
 	kubeletConfig, err := options.NewKubeletConfiguration()
@@ -487,7 +489,10 @@ func getReservedCPUs(machineInfo *cadvisorapi.MachineInfo, cpus string) (cpuset.
 }
 
 func run(ctx context.Context, s *options.KubeletServer, kubeDeps *kubelet.Dependencies, featureGate featuregate.FeatureGate) (err error) {
-	// eventClient 处理事件的上报；heartbeatClient 处理心跳的上报；csiClient 处理 CSI 相关的
+	// eventClient 处理事件的上报；
+	// heartbeatClient 处理心跳的上报；
+	// csiClient 处理 CSI 相关的
+
 	// Set global feature gates based on the value on the initial KubeletServer
 	err = utilfeature.DefaultMutableFeatureGate.SetFromMap(s.KubeletConfiguration.FeatureGates)
 	if err != nil {
@@ -558,18 +563,21 @@ func run(ctx context.Context, s *options.KubeletServer, kubeDeps *kubelet.Depend
 		}
 	}
 
+	// 获取主机名
 	hostName, err := nodeutil.GetHostname(s.HostnameOverride)
 	if err != nil {
 		return err
 	}
+	// 获取节点名称
 	nodeName, err := getNodeName(kubeDeps.Cloud, hostName)
 	if err != nil {
 		return err
 	}
 
 	// if in standalone mode, indicate as much by setting all clients to nil
+	// 如果处于独立模式，则通过将所有客户端设置为零来指示
 	switch {
-	case standaloneMode:
+	case standaloneMode: // 独立模式 false
 		kubeDeps.KubeClient = nil
 		kubeDeps.EventClient = nil
 		kubeDeps.HeartbeatClient = nil
@@ -802,6 +810,7 @@ func run(ctx context.Context, s *options.KubeletServer, kubeDeps *kubelet.Depend
 	}
 
 	// If systemd is used, notify it that we have started
+	// 如果使用了systemd，请通知它我们已经启动
 	go daemon.SdNotify(false, "READY=1")
 
 	select {
@@ -1202,6 +1211,12 @@ func startKubelet(k kubelet.Bootstrap, podCfg *config.PodConfig, kubeCfg *kubele
 	// start the kubelet
 	go k.Run(podCfg.Updates())
 
+	address := netutils.ParseIPSloppy(kubeCfg.Address)
+	port := uint(kubeCfg.Port)
+
+	klog.Infof("-----> starting kubelet server at %s:%d", address, port)
+	klog.Infof("-----> kube cfg read only port: %v", kubeCfg.ReadOnlyPort)
+
 	// start the kubelet server
 	if enableServer {
 		go k.ListenAndServe(kubeCfg, kubeDeps.TLSOptions, kubeDeps.Auth, kubeDeps.TracerProvider)
@@ -1210,6 +1225,8 @@ func startKubelet(k kubelet.Bootstrap, podCfg *config.PodConfig, kubeCfg *kubele
 		go k.ListenAndServeReadOnly(netutils.ParseIPSloppy(kubeCfg.Address), uint(kubeCfg.ReadOnlyPort))
 	}
 	if utilfeature.DefaultFeatureGate.Enabled(features.KubeletPodResources) {
+		// grpc server
+		klog.Info("-----> kubelet pod resources server enabled")
 		go k.ListenAndServePodResources()
 	}
 }

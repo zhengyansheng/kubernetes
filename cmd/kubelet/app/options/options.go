@@ -56,8 +56,8 @@ type KubeletFlags struct {
 	KubeConfig          string
 	BootstrapKubeconfig string
 
-	// HostnameOverride is the hostname used to identify the kubelet instead
-	// of the actual hostname.
+	// HostnameOverride is the hostname used to identify the kubelet instead of the actual hostname.
+	// HostnameOverride是用于标识kubelet的主机名，而不是实际的主机名
 	HostnameOverride string
 	// NodeIP is IP address of the node.
 	// If set, kubelet will use this IP address for the node.
@@ -218,6 +218,7 @@ func NewKubeletConfiguration() (*kubeletconfig.KubeletConfiguration, error) {
 	}
 	versioned := &v1beta1.KubeletConfiguration{}
 	scheme.Default(versioned)
+	
 	config := &kubeletconfig.KubeletConfiguration{}
 	if err := scheme.Convert(versioned, config, nil); err != nil {
 		return nil, err
@@ -237,7 +238,7 @@ func applyLegacyDefaults(kc *kubeletconfig.KubeletConfiguration) {
 	// --authorization-mode
 	kc.Authorization.Mode = kubeletconfig.KubeletAuthorizationModeAlwaysAllow
 	// --read-only-port
-	kc.ReadOnlyPort = ports.KubeletReadOnlyPort
+	kc.ReadOnlyPort = ports.KubeletReadOnlyPort // 10255
 }
 
 // KubeletServer encapsulates all of the parameters necessary for starting up

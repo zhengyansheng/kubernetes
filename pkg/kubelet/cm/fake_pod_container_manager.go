@@ -60,15 +60,19 @@ func (m *FakePodContainerManager) EnsureExists(_ *v1.Pod) error {
 }
 
 func (m *FakePodContainerManager) GetPodContainerName(_ *v1.Pod) (CgroupName, string) {
+	// 加锁
 	m.Lock()
 	defer m.Unlock()
+	// 记录调用的函数
 	m.CalledFunctions = append(m.CalledFunctions, "GetPodContainerName")
 	return nil, ""
 }
 
 func (m *FakePodContainerManager) Destroy(name CgroupName) error {
+	// 加锁
 	m.Lock()
 	defer m.Unlock()
+	// 记录调用的函数
 	m.CalledFunctions = append(m.CalledFunctions, "Destroy")
 	for key, cgname := range m.Cgroups {
 		if reflect.DeepEqual(cgname, name) {

@@ -514,6 +514,7 @@ func startGarbageCollectorController(ctx context.Context, controllerContext Cont
 		return nil, true, err
 	}
 
+	// 忽略的资源，不在gc中删除
 	ignoredResources := make(map[schema.GroupResource]struct{})
 	for _, r := range controllerContext.ComponentConfig.GarbageCollectorController.GCIgnoredResources {
 		ignoredResources[schema.GroupResource{Group: r.Group, Resource: r.Resource}] = struct{}{}
@@ -531,11 +532,12 @@ func startGarbageCollectorController(ctx context.Context, controllerContext Cont
 	}
 
 	// Start the garbage collector.
+	// 启动gc收集器
 	workers := int(controllerContext.ComponentConfig.GarbageCollectorController.ConcurrentGCSyncs)
 	go garbageCollector.Run(ctx, workers)
 
-	// Periodically refresh the RESTMapper with new discovery information and sync
-	// the garbage collector.
+	// Periodically refresh the RESTMapper with new discovery information and sync the garbage collector.
+	// 定期使用新的 discovery 信息刷新 RESTMapper 并同步 gc
 	go garbageCollector.Sync(discoveryClient, 30*time.Second, ctx.Done())
 
 	return garbageCollector, true, nil

@@ -308,9 +308,11 @@ func PreInitRuntimeService(kubeCfg *kubeletconfiginternal.KubeletConfiguration, 
 		remoteImageEndpoint = kubeCfg.ContainerRuntimeEndpoint
 	}
 	var err error
+	// 容器运行时管理服务
 	if kubeDeps.RemoteRuntimeService, err = remote.NewRemoteRuntimeService(kubeCfg.ContainerRuntimeEndpoint, kubeCfg.RuntimeRequestTimeout.Duration, kubeDeps.TracerProvider); err != nil {
 		return err
 	}
+	// 镜像管理服务
 	if kubeDeps.RemoteImageService, err = remote.NewRemoteImageService(remoteImageEndpoint, kubeCfg.RuntimeRequestTimeout.Duration, kubeDeps.TracerProvider); err != nil {
 		return err
 	}
@@ -641,6 +643,8 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 
 	klet.reasonCache = NewReasonCache()
 	klet.workQueue = queue.NewBasicWorkQueue(klet.clock)
+
+	// 核心逻辑 创建 pod worker
 	klet.podWorkers = newPodWorkers(
 		klet.syncPod,
 		klet.syncTerminatingPod,
@@ -2009,8 +2013,10 @@ func (kl *Kubelet) syncTerminatedPod(ctx context.Context, pod *v1.Pod, podStatus
 
 	// remove any cgroups in the hierarchy for pods that are no longer running.
 	if kl.cgroupsPerQOS {
+		// pcm: Pod容器管理
 		pcm := kl.containerManager.NewPodContainerManager()
 		name, _ := pcm.GetPodContainerName(pod)
+		// 销毁Pod的Cgroup
 		if err := pcm.Destroy(name); err != nil {
 			return err
 		}
@@ -2021,6 +2027,7 @@ func (kl *Kubelet) syncTerminatedPod(ctx context.Context, pod *v1.Pod, podStatus
 
 	// mark the final pod status
 	kl.statusManager.TerminatePod(pod)
+
 	klog.V(4).InfoS("Pod is terminated and will need no more status updates", "pod", klog.KObj(pod), "podUID", pod.UID)
 
 	return nil

@@ -125,6 +125,7 @@ func NewDeploymentController(
 		AddFunc:    dc.addDeployment,
 		UpdateFunc: dc.updateDeployment,
 		// This will enter the sync loop and no-op, because the deployment has been deleted from the store.
+		// 这将进入同步循环，并且没有操作，因为deployment已从存储中删除
 		DeleteFunc: dc.deleteDeployment,
 	})
 	rsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -133,7 +134,6 @@ func NewDeploymentController(
 		DeleteFunc: dc.deleteReplicaSet,
 	})
 	// podInformer: PodInformer provides access to a shared informer and lister for pods
-	// TODO: AddFunc?
 	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		DeleteFunc: dc.deletePod,
 	})
@@ -360,12 +360,13 @@ func (dc *DeploymentController) deleteReplicaSet(obj interface{}) {
 // deletePod will enqueue a Recreate Deployment once all of its pods have stopped running.
 func (dc *DeploymentController) deletePod(obj interface{}) {
 	// 对象断言
+	klog.Info("-----> deletePod 1")
 	pod, ok := obj.(*v1.Pod)
 
-	// When a delete is dropped, the relist will notice a pod in the store not
-	// in the list, leading to the insertion of a tombstone object which contains
-	// the deleted key/value. Note that this value might be stale. If the Pod
-	// changed labels the new deployment will not be woken up till the periodic resync.
+	// When a delete is dropped, the relist will notice a pod in the store not in the list,
+	// leading to the insertion of a tombstone object which contains the deleted key/value.
+	// Note that this value might be stale.
+	// If the Pod changed labels the new deployment will not be woken up till the periodic resync.
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
@@ -380,6 +381,7 @@ func (dc *DeploymentController) deletePod(obj interface{}) {
 	}
 	klog.V(4).InfoS("Pod deleted", "pod", klog.KObj(pod))
 	if d := dc.getDeploymentForPod(pod); d != nil && d.Spec.Strategy.Type == apps.RecreateDeploymentStrategyType {
+		klog.Info("-----> get deployment for pod success")
 		// Sync if this Deployment now has no more Pods.
 		// 通过 deployment 找到 rs
 		rsList, err := util.ListReplicaSets(d, util.RsListFromClient(dc.client.AppsV1()))
@@ -392,13 +394,16 @@ func (dc *DeploymentController) deletePod(obj interface{}) {
 		if err != nil {
 			return
 		}
+		klog.Infof("-----> podMap: %+v", podMap)
 		// 计算 pod 数量
 		numPods := 0
 		for _, podList := range podMap {
-			numPods += len(podList)
+			numPods += len(podList) // podList -> slice
 		}
+		klog.Infof("-----> numPods: %v", numPods)
+		// 如果 pod 数量为 0，入队
 		if numPods == 0 {
-			// 没有pods则开始同步
+			klog.Infof("-----> en queue: %+v", d)
 			dc.enqueueDeployment(d)
 		}
 	}
@@ -483,8 +488,7 @@ func (dc *DeploymentController) resolveControllerRef(namespace string, controlle
 		return nil
 	}
 	if d.UID != controllerRef.UID {
-		// The controller we found with this Name is not the same one that the
-		// ControllerRef points to.
+		// The controller we found with this Name is not the same one that the ControllerRef points to.
 		return nil
 	}
 	return d
@@ -624,7 +628,7 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 		klog.V(4).InfoS("Finished syncing deployment", "deployment", klog.KRef(namespace, name), "duration", time.Since(startTime))
 	}()
 
-	// shareInformer 获取 deployment 对象 k get deploy nginx_deploy -o yaml
+	// shareInformer 获取 deployment 对象 k get deploy nginx_deploy
 	deployment, err := dc.dLister.Deployments(namespace).Get(name)
 	if errors.IsNotFound(err) {
 		klog.V(2).InfoS("Deployment has been deleted", "deployment", klog.KRef(namespace, name))

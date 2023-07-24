@@ -57,6 +57,7 @@ func (gc *GarbageCollector) deleteObject(item objectReference, policy *metav1.De
 	uid := item.UID
 	preconditions := metav1.Preconditions{UID: &uid}
 	deleteOptions := metav1.DeleteOptions{Preconditions: &preconditions, PropagationPolicy: policy}
+	// 删除资源
 	return gc.metadataClient.Resource(resource).Namespace(resourceDefaultNamespace(namespaced, item.Namespace)).Delete(context.TODO(), item.Name, deleteOptions)
 }
 

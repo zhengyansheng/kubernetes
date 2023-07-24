@@ -48,9 +48,14 @@ func NewBasicWorkQueue(clock clock.Clock) WorkQueue {
 }
 
 func (q *basicWorkQueue) GetWork() []types.UID {
+	// 加锁
 	q.lock.Lock()
 	defer q.lock.Unlock()
+
+	// 当前时间
 	now := q.clock.Now()
+	
+	// 遍历队列，如果队列中的时间小于当前时间，则将其添加到items中
 	var items []types.UID
 	for k, v := range q.queue {
 		if v.Before(now) {
@@ -61,8 +66,12 @@ func (q *basicWorkQueue) GetWork() []types.UID {
 	return items
 }
 
+// Enqueue inserts a new item or overwrites an existing item.
 func (q *basicWorkQueue) Enqueue(item types.UID, delay time.Duration) {
+	// 加锁
 	q.lock.Lock()
 	defer q.lock.Unlock()
+
+	// 添加到队列中
 	q.queue[item] = q.clock.Now().Add(delay)
 }

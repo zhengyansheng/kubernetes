@@ -82,6 +82,8 @@ func (m *BaseControllerRefManager) ClaimObject(ctx context.Context, obj metav1.O
 		}
 		// Owned by us but selector doesn't match.
 		// Try to release, unless we're being deleted.
+		// 由我们拥有，但选择器不匹配。
+		// 尝试释放，除非我们正在被删除。
 		if m.Controller.GetDeletionTimestamp() != nil {
 			return false, nil
 		}
@@ -181,6 +183,7 @@ func NewPodControllerRefManager(
 // If the error is nil, either the reconciliation succeeded, or no
 // reconciliation was necessary. The list of Pods that you now own is returned.
 func (m *PodControllerRefManager) ClaimPods(ctx context.Context, pods []*v1.Pod, filters ...func(*v1.Pod) bool) ([]*v1.Pod, error) {
+	// 认领的 Pod
 	var claimed []*v1.Pod
 	var errlist []error
 
@@ -198,9 +201,11 @@ func (m *PodControllerRefManager) ClaimPods(ctx context.Context, pods []*v1.Pod,
 		return true
 	}
 	adopt := func(ctx context.Context, obj metav1.Object) error {
+		// 选用 Pod
 		return m.AdoptPod(ctx, obj.(*v1.Pod))
 	}
 	release := func(ctx context.Context, obj metav1.Object) error {
+		// 释放 Pod
 		return m.ReleasePod(ctx, obj.(*v1.Pod))
 	}
 

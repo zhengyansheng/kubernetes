@@ -109,6 +109,7 @@ type PodContainerManager interface {
 	Exists(*v1.Pod) bool
 
 	// Destroy takes a pod Cgroup name as argument and destroys the pod's container.
+	// Destroy以pod Cgroup名称作为参数，并销毁pod的容器。
 	Destroy(name CgroupName) error
 
 	// ReduceCPULimits reduces the CPU CFS values to the minimum amount of shares.

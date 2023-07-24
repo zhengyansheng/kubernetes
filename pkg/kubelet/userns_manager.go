@@ -262,11 +262,13 @@ func (m *usernsManager) record(pod types.UID, from, length uint32) (err error) {
 }
 
 // Release releases the user namespace allocated to the specified pod.
+// Release释放分配给指定pod的用户命名空间
 func (m *usernsManager) Release(podUID types.UID) {
 	if !utilfeature.DefaultFeatureGate.Enabled(features.UserNamespacesStatelessPodsSupport) {
 		return
 	}
 
+	// 加锁
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -285,6 +287,7 @@ func (m *usernsManager) releaseWithLock(pod types.UID) {
 	m.numAllocated--
 	m.removed++
 
+	// 移除pod的mappings文件
 	_ = os.Remove(filepath.Join(m.kl.getPodDir(pod), mappingsFile))
 
 	if m.removed%mapReInitializeThreshold == 0 {

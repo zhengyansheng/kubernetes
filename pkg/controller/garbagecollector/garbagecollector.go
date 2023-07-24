@@ -93,12 +93,16 @@ func NewGarbageCollector(
 	informersStarted <-chan struct{},
 ) (*GarbageCollector, error) {
 
+	// event
 	eventBroadcaster := record.NewBroadcaster()
 	eventRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "garbage-collector-controller"})
 
+	// queue
 	attemptToDelete := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "garbage_collector_attempt_to_delete")
 	attemptToOrphan := workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "garbage_collector_attempt_to_orphan")
+	// cache
 	absentOwnerCache := NewReferenceCache(500)
+
 	gc := &GarbageCollector{
 		metadataClient:   metadataClient,
 		restMapper:       mapper,
@@ -124,6 +128,7 @@ func NewGarbageCollector(
 		ignoredResources: ignoredResources,
 	}
 
+	// metrics
 	metrics.Register()
 
 	return gc, nil
@@ -132,6 +137,7 @@ func NewGarbageCollector(
 // resyncMonitors starts or stops resource monitors as needed to ensure that all
 // (and only) those resources present in the map are monitored.
 func (gc *GarbageCollector) resyncMonitors(deletableResources map[schema.GroupVersionResource]struct{}) error {
+
 	if err := gc.dependencyGraphBuilder.syncMonitors(deletableResources); err != nil {
 		return err
 	}
@@ -154,6 +160,7 @@ func (gc *GarbageCollector) Run(ctx context.Context, workers int) {
 	klog.Infof("Starting garbage collector controller")
 	defer klog.Infof("Shutting down garbage collector controller")
 
+	// 依赖关系图形生成器
 	go gc.dependencyGraphBuilder.Run(ctx.Done())
 
 	if !cache.WaitForNamedCacheSync("garbage collector", ctx.Done(), gc.dependencyGraphBuilder.IsSynced) {
@@ -164,7 +171,9 @@ func (gc *GarbageCollector) Run(ctx context.Context, workers int) {
 
 	// gc workers
 	for i := 0; i < workers; i++ {
+		// runAttemptToDeleteWorker 尝试删除 attemptToDelete 队列中的项目。
 		go wait.UntilWithContext(ctx, gc.runAttemptToDeleteWorker, 1*time.Second)
+		// runAttemptToOrphanWorker 尝试孤立 attemptToOrphan 队列中的项目，然后删除它们。
 		go wait.Until(gc.runAttemptToOrphanWorker, 1*time.Second, ctx.Done())
 	}
 
@@ -179,26 +188,28 @@ func (gc *GarbageCollector) Run(ctx context.Context, workers int) {
 // the mapper's underlying discovery client will be unnecessarily reset during
 // the course of detecting new resources.
 func (gc *GarbageCollector) Sync(discoveryClient discovery.ServerResourcesInterface, period time.Duration, stopCh <-chan struct{}) {
+	// 定义版本资源组
 	oldResources := make(map[schema.GroupVersionResource]struct{})
+
 	wait.Until(func() {
 		// Get the current resource list from discovery.
+		// 从discovery获取当前资源列表。
 		newResources := GetDeletableResources(discoveryClient)
 
 		// This can occur if there is an internal error in GetDeletableResources.
-		if len(newResources) == 0 {
+		if len(newResources) == 0 { // 内部错误
 			klog.V(2).Infof("no resources reported by discovery, skipping garbage collector sync")
 			metrics.GarbageCollectorResourcesSyncError.Inc()
 			return
 		}
 
 		// Decide whether discovery has reported a change.
-		if reflect.DeepEqual(oldResources, newResources) {
+		if reflect.DeepEqual(oldResources, newResources) { // 没有变化
 			klog.V(5).Infof("no resource updates from discovery, skipping garbage collector sync")
 			return
 		}
 
-		// Ensure workers are paused to avoid processing events before informers
-		// have resynced.
+		// Ensure workers are paused to avoid processing events before informers have resynced.
 		gc.workerLock.Lock()
 		defer gc.workerLock.Unlock()
 
@@ -319,9 +330,9 @@ func (gc *GarbageCollector) processAttemptToDeleteWorker(ctx context.Context) bo
 
 	action := gc.attemptToDeleteWorker(ctx, item)
 	switch action {
-	case forgetItem:
+	case forgetItem: // 忘记元素
 		gc.attemptToDelete.Forget(item)
-	case requeueItem:
+	case requeueItem: // 元素重新排队
 		gc.attemptToDelete.AddRateLimited(item)
 	}
 
@@ -335,6 +346,7 @@ const (
 	forgetItem
 )
 
+// attemptToDeleteWorker attempts to delete the given item from the cluster.
 func (gc *GarbageCollector) attemptToDeleteWorker(ctx context.Context, item interface{}) workQueueItemAction {
 	n, ok := item.(*node)
 	if !ok {
@@ -507,8 +519,7 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 		return nil
 	}
 	// TODO: It's only necessary to talk to the API server if this is a
-	// "virtual" node. The local graph could lag behind the real status, but in
-	// practice, the difference is small.
+	// "virtual" node. The local graph could lag behind the real status, but in practice, the difference is small.
 	latest, err := gc.getObject(item.identity)
 	switch {
 	case errors.IsNotFound(err):
@@ -541,6 +552,7 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 		return nil
 	}
 
+	// 核心逻辑 对引用分类处理
 	solid, dangling, waitingForDependentsDeletion, err := gc.classifyReferences(ctx, item, ownerReferences)
 	if err != nil {
 		return err
@@ -598,20 +610,26 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 		// item doesn't have any solid owner, so it needs to be garbage
 		// collected. Also, none of item's owners is waiting for the deletion of
 		// the dependents, so set propagationPolicy based on existing finalizers.
+		// 删除策略
 		var policy metav1.DeletionPropagation
 		switch {
+		// 如果对象的metadata.finalizer中有 "orphan" 孤儿 则返回true
 		case hasOrphanFinalizer(latest):
 			// if an existing orphan finalizer is already on the object, honor it.
 			policy = metav1.DeletePropagationOrphan
-		case hasDeleteDependentsFinalizer(latest):
+			// 如果对象的metadata.finalizer中有 "foregroundDeletion" 前台删除 则返回true
+		case hasDeleteDependentsFinalizer(latest): // "foregroundDeletion"
 			// if an existing foreground finalizer is already on the object, honor it.
 			policy = metav1.DeletePropagationForeground
 		default:
 			// otherwise, default to background.
+			// 默认后台删除
 			policy = metav1.DeletePropagationBackground
 		}
 		klog.V(2).InfoS("Deleting object", "object", klog.KRef(item.identity.Namespace, item.identity.Name),
 			"objectUID", item.identity.UID, "kind", item.identity.Kind, "propagationPolicy", policy)
+
+		// 删除对象
 		return gc.deleteObject(item.identity, &policy)
 	}
 }
@@ -745,6 +763,8 @@ func (gc *GarbageCollector) GraphHasUID(u types.UID) bool {
 // All discovery errors are considered temporary. Upon encountering any error,
 // GetDeletableResources will log and return any discovered resources it was
 // able to process (which may be none).
+// 获取可删除的资源( 因为如果没有删除操作，就不需要再次同步）
+// 这个函数可以直接运行，传递下参数即可；
 func GetDeletableResources(discoveryClient discovery.ServerResourcesInterface) map[schema.GroupVersionResource]struct{} {
 	preferredResources, err := discoveryClient.ServerPreferredResources()
 	if err != nil {
@@ -758,8 +778,7 @@ func GetDeletableResources(discoveryClient discovery.ServerResourcesInterface) m
 		return map[schema.GroupVersionResource]struct{}{}
 	}
 
-	// This is extracted from discovery.GroupVersionResources to allow tolerating
-	// failures on a per-resource basis.
+	// This is extracted from discovery.GroupVersionResources to allow tolerating failures on a per-resource basis.
 	deletableResources := discovery.FilteredBy(discovery.SupportsAllVerbs{Verbs: []string{"delete", "list", "watch"}}, preferredResources)
 	deletableGroupVersionResources := map[schema.GroupVersionResource]struct{}{}
 	for _, rl := range deletableResources {

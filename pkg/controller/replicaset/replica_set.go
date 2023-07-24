@@ -117,10 +117,12 @@ type ReplicaSetController struct {
 
 // NewReplicaSetController configures a replica set controller with the specified event recorder
 func NewReplicaSetController(rsInformer appsinformers.ReplicaSetInformer, podInformer coreinformers.PodInformer, kubeClient clientset.Interface, burstReplicas int) *ReplicaSetController {
+	// event
 	eventBroadcaster := record.NewBroadcaster()
 	if err := metrics.Register(legacyregistry.Register); err != nil {
 		klog.ErrorS(err, "unable to register metrics")
 	}
+
 	return NewBaseController(rsInformer, podInformer, kubeClient, burstReplicas,
 		apps.SchemeGroupVersion.WithKind("ReplicaSet"),
 		"replicaset_controller",
@@ -558,15 +560,21 @@ func (rsc *ReplicaSetController) processNextWorkItem(ctx context.Context) bool {
 // Does NOT modify <filteredPods>.
 // It will requeue the replica set in case of an error while creating/deleting pods.
 func (rsc *ReplicaSetController) manageReplicas(ctx context.Context, filteredPods []*v1.Pod, rs *apps.ReplicaSet) error {
+	// 计算需要创建的副本数
+	// 1. 3, 5 -> 2
+	// 2. 3, 2 -> -1
 	diff := len(filteredPods) - int(*(rs.Spec.Replicas))
+
 	rsKey, err := controller.KeyFunc(rs)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("couldn't get key for %v %#v: %v", rsc.Kind, rs, err))
 		return nil
 	}
 	if diff < 0 {
+		// 转换成正数
 		diff *= -1
-		if diff > rsc.burstReplicas {
+		// 限制最大创建的副本数
+		if diff > rsc.burstReplicas { // burstReplicas -> 500
 			diff = rsc.burstReplicas
 		}
 		// TODO: Track UIDs of creates just like deletes. The problem currently
@@ -584,6 +592,7 @@ func (rsc *ReplicaSetController) manageReplicas(ctx context.Context, filteredPod
 		// prevented from spamming the API service with the pod create requests
 		// after one of its pods fails.  Conveniently, this also prevents the
 		// event spam that those failures would generate.
+		// slowStartBatch 慢启动批处理
 		successfulCreations, err := slowStartBatch(diff, controller.SlowStartInitialBatchSize, func() error {
 			err := rsc.podControl.CreatePods(ctx, rs.Namespace, &rs.Spec.Template, rs, metav1.NewControllerRef(rs, rsc.GroupVersionKind))
 			if err != nil {
@@ -607,6 +616,7 @@ func (rsc *ReplicaSetController) manageReplicas(ctx context.Context, filteredPod
 			}
 		}
 		return err
+
 	} else if diff > 0 {
 		if diff > rsc.burstReplicas {
 			diff = rsc.burstReplicas
@@ -663,6 +673,7 @@ func (rsc *ReplicaSetController) manageReplicas(ctx context.Context, filteredPod
 // meaning it did not expect to see any more of its pods created or deleted. This function is not meant to be
 // invoked concurrently with the same key.
 func (rsc *ReplicaSetController) syncReplicaSet(ctx context.Context, key string) error {
+	// 计时
 	startTime := time.Now()
 	defer func() {
 		klog.V(4).Infof("Finished syncing %v %q (%v)", rsc.Kind, key, time.Since(startTime))
@@ -672,6 +683,8 @@ func (rsc *ReplicaSetController) syncReplicaSet(ctx context.Context, key string)
 	if err != nil {
 		return err
 	}
+
+	// 通过namespace/name 获取rs对象
 	rs, err := rsc.rsLister.ReplicaSets(namespace).Get(name)
 	if apierrors.IsNotFound(err) {
 		klog.V(4).Infof("%v %v has been deleted", rsc.Kind, key)
@@ -682,7 +695,10 @@ func (rsc *ReplicaSetController) syncReplicaSet(ctx context.Context, key string)
 		return err
 	}
 
+	// rs是否需要同步
 	rsNeedsSync := rsc.expectations.SatisfiedExpectations(key)
+
+	// 创建selector
 	selector, err := metav1.LabelSelectorAsSelector(rs.Spec.Selector)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("error converting pod selector to selector for rs %v/%v: %v", namespace, name, err))
@@ -692,6 +708,7 @@ func (rsc *ReplicaSetController) syncReplicaSet(ctx context.Context, key string)
 	// list all pods to include the pods that don't match the rs`s selector
 	// anymore but has the stale controller ref.
 	// TODO: Do the List and Filter in a single pass, or use an index.
+	// 获取所有的pods
 	allPods, err := rsc.podLister.Pods(rs.Namespace).List(labels.Everything())
 	if err != nil {
 		return err

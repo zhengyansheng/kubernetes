@@ -106,10 +106,12 @@ type GraphBuilder struct {
 	// single-threaded GraphBuilder.processGraphChanges() reads/writes it.
 	uidToNode *concurrentUIDToNode
 	// GraphBuilder is the producer of attemptToDelete and attemptToOrphan, GC is the consumer.
+	// GraphBuilder是attemptToDelete和attemptTo Orphan的生产者，GC是消费者
 	attemptToDelete workqueue.RateLimitingInterface
 	attemptToOrphan workqueue.RateLimitingInterface
-	// GraphBuilder and GC share the absentOwnerCache. Objects that are known to
-	// be non-existent are added to the cached.
+	// GraphBuilder and GC share the absentOwnerCache.
+	// Objects that are known to be non-existent are added to the cached.
+	//GraphBuilder和GC共享absentOwnerCache, 将已知不存在的对象添加到缓存中。
 	absentOwnerCache *ReferenceCache
 	sharedInformers  informerfactory.InformerFactory
 	ignoredResources map[schema.GroupResource]struct{}
@@ -220,6 +222,7 @@ func (gb *GraphBuilder) syncMonitors(resources map[schema.GroupVersionResource]s
 		current[resource] = &monitor{store: s, controller: c}
 		added++
 	}
+	// 赋值
 	gb.monitors = current
 
 	for _, monitor := range toRemove {
@@ -239,15 +242,18 @@ func (gb *GraphBuilder) syncMonitors(resources map[schema.GroupVersionResource]s
 // If called before Run, startMonitors does nothing (as there is no stop channel
 // to support monitor/informer execution).
 func (gb *GraphBuilder) startMonitors() {
+	// 加锁
 	gb.monitorLock.Lock()
 	defer gb.monitorLock.Unlock()
 
+	// 如果没有运行，直接返回
 	if !gb.running {
 		return
 	}
 
-	// we're waiting until after the informer start that happens once all the controllers are initialized.  This ensures
-	// that they don't get unexpected events on their work queues.
+	// we're waiting until after the informer start that happens once all the controllers are initialized.
+	// This ensures that they don't get unexpected events on their work queues.
+	//我们一直等到informer启动后，所有控制器初始化后才会发生这种情况。这确保了他们的工作队列中不会出现意外事件。
 	<-gb.informersStarted
 
 	monitors := gb.monitors
@@ -256,6 +262,7 @@ func (gb *GraphBuilder) startMonitors() {
 		if monitor.stopCh == nil {
 			monitor.stopCh = make(chan struct{})
 			gb.sharedInformers.Start(gb.stopCh)
+			// TODO: 难道这里是启动所有的控制器
 			go monitor.Run()
 			started++
 		}
@@ -297,14 +304,14 @@ func (gb *GraphBuilder) Run(stopCh <-chan struct{}) {
 	gb.running = true
 	gb.monitorLock.Unlock()
 
-	// Start monitors and begin change processing until the stop channel is
-	// closed.
+	// Start monitors and begin change processing until the stop channel is closed.
 	gb.startMonitors()
 	wait.Until(gb.runProcessGraphChanges, 1*time.Second, stopCh)
 
 	// Stop any running monitors.
 	gb.monitorLock.Lock()
 	defer gb.monitorLock.Unlock()
+
 	monitors := gb.monitors
 	stopped := 0
 	for _, monitor := range monitors {
@@ -524,17 +531,18 @@ func beingDeleted(accessor metav1.Object) bool {
 }
 
 func hasDeleteDependentsFinalizer(accessor metav1.Object) bool {
-	return hasFinalizer(accessor, metav1.FinalizerDeleteDependents)
+	return hasFinalizer(accessor, metav1.FinalizerDeleteDependents) // "foregroundDeletion"
 }
 
 func hasOrphanFinalizer(accessor metav1.Object) bool {
-	return hasFinalizer(accessor, metav1.FinalizerOrphanDependents)
+	return hasFinalizer(accessor, metav1.FinalizerOrphanDependents) // "orphan"
 }
 
 func hasFinalizer(accessor metav1.Object, matchingFinalizer string) bool {
+	// 获取对象的 finalizers
 	finalizers := accessor.GetFinalizers()
 	for _, finalizer := range finalizers {
-		if finalizer == matchingFinalizer {
+		if finalizer == matchingFinalizer { // "orphan"
 			return true
 		}
 	}
