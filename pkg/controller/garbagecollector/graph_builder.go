@@ -82,10 +82,15 @@ type GraphBuilder struct {
 
 	// each monitor list/watches a resource, the results are funneled to the
 	// dependencyGraphBuilder
-	monitors    monitors
+	// 每个监视器列表/监视资源，结果汇集到dependencyGraphBuilder
+	monitors monitors
+
+	// 互斥锁
 	monitorLock sync.RWMutex
+
 	// informersStarted is closed after after all of the controllers have been initialized and are running.
 	// After that it is safe to start them here, before that it is not.
+	// informersStarted在所有控制器初始化并运行后关闭。之后在这里启动它们是安全的，在此之前它不是。
 	informersStarted <-chan struct{}
 
 	// stopCh drives shutdown. When a receive from it unblocks, monitors will shut down.
@@ -94,26 +99,37 @@ type GraphBuilder struct {
 
 	// running tracks whether Run() has been called.
 	// it is protected by monitorLock.
+	// 运行轨道是否已调用Run()它受monitorLock保护。
 	running bool
 
+	// event
 	eventRecorder record.EventRecorder
 
 	metadataClient metadata.Interface
+
 	// monitors are the producer of the graphChanges queue, graphBuilder alters
 	// the in-memory graph according to the changes.
 	graphChanges workqueue.RateLimitingInterface
+
 	// uidToNode doesn't require a lock to protect, because only the
 	// single-threaded GraphBuilder.processGraphChanges() reads/writes it.
+	// uidToNode 不需要锁保护，因为只有单线程 GraphBuilder.processGraphChanges() 读写它。
 	uidToNode *concurrentUIDToNode
+
 	// GraphBuilder is the producer of attemptToDelete and attemptToOrphan, GC is the consumer.
 	// GraphBuilder是attemptToDelete和attemptTo Orphan的生产者，GC是消费者
 	attemptToDelete workqueue.RateLimitingInterface
 	attemptToOrphan workqueue.RateLimitingInterface
+
 	// GraphBuilder and GC share the absentOwnerCache.
 	// Objects that are known to be non-existent are added to the cached.
 	//GraphBuilder和GC共享absentOwnerCache, 将已知不存在的对象添加到缓存中。
 	absentOwnerCache *ReferenceCache
-	sharedInformers  informerfactory.InformerFactory
+
+	// 所有k8s资源对象集的informer
+	sharedInformers informerfactory.InformerFactory
+
+	// 监视器忽略的资源对象集
 	ignoredResources map[schema.GroupResource]struct{}
 }
 
@@ -136,8 +152,11 @@ func (m *monitor) Run() {
 type monitors map[schema.GroupVersionResource]*monitor
 
 func (gb *GraphBuilder) controllerFor(resource schema.GroupVersionResource, kind schema.GroupVersionKind) (cache.Controller, cache.Store, error) {
+
+	// 1. 将 新增、更改、删除的资源对象构建为event结构体，放入GraphBuilder的graphChanges队列里
 	handlers := cache.ResourceEventHandlerFuncs{
 		// add the event to the dependencyGraphBuilder's graphChanges.
+		// 添加事件到dependencyGraphBuilder的graphChanges。
 		AddFunc: func(obj interface{}) {
 			event := &event{
 				eventType: addEvent,
@@ -149,6 +168,7 @@ func (gb *GraphBuilder) controllerFor(resource schema.GroupVersionResource, kind
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			// TODO: check if there are differences in the ownerRefs,
 			// finalizers, and DeletionTimestamp; if not, ignore the update.
+			// TODO：检查 ownerRefs， finalizers和DeletionTimestamp是否存在差异; 如果没有，请忽略更新。
 			event := &event{
 				eventType: updateEvent,
 				obj:       newObj,
@@ -159,6 +179,7 @@ func (gb *GraphBuilder) controllerFor(resource schema.GroupVersionResource, kind
 		},
 		DeleteFunc: func(obj interface{}) {
 			// delta fifo may wrap the object in a cache.DeletedFinalStateUnknown, unwrap it
+			// delta fifo可以将对象包装在cache.DeletedFinalStateUnknown中，解包它
 			if deletedFinalStateUnknown, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 				obj = deletedFinalStateUnknown.Obj
 			}
@@ -170,14 +191,21 @@ func (gb *GraphBuilder) controllerFor(resource schema.GroupVersionResource, kind
 			gb.graphChanges.Add(event)
 		},
 	}
+	// 2. 从sharedInformers中获取资源对象的informer，添加事件处理函数
 	shared, err := gb.sharedInformers.ForResource(resource)
 	if err != nil {
+		// 获取资源对象时出错会到这里,比如非k8s内置RedisCluster、clusterbases、clusters、esclusters、volumeproviders、stsmasters、appapps、mysqlclusters、brokerclusters、clustertemplates;
+		// 内置的networkPolicies、apiservices、customresourcedefinitions
 		klog.V(4).Infof("unable to use a shared informer for resource %q, kind %q: %v", resource.String(), kind.String(), err)
 		return nil, nil, err
 	}
+
 	klog.V(4).Infof("using a shared informer for resource %q, kind %q", resource.String(), kind.String())
+
 	// need to clone because it's from a shared cache
-	shared.Informer().AddEventHandlerWithResyncPeriod(handlers, ResourceResyncTime)
+	// 不需要克隆，因为它不是来自共享缓存
+	shared.Informer().AddEventHandlerWithResyncPeriod(handlers, ResourceResyncTime) // 0
+
 	return shared.Informer().GetController(), shared.Informer().GetStore(), nil
 }
 
@@ -305,7 +333,10 @@ func (gb *GraphBuilder) Run(stopCh <-chan struct{}) {
 	gb.monitorLock.Unlock()
 
 	// Start monitors and begin change processing until the stop channel is closed.
+	// 启动 informer
 	gb.startMonitors()
+
+	// 开启消费者
 	wait.Until(gb.runProcessGraphChanges, 1*time.Second, stopCh)
 
 	// Stop any running monitors.
@@ -605,6 +636,7 @@ func (gb *GraphBuilder) processTransitions(oldObj interface{}, newAccessor metav
 	}
 }
 
+// runProcessGraphChanges 运行processGraphChanges直到graphChanges队列为空
 func (gb *GraphBuilder) runProcessGraphChanges() {
 	for gb.processGraphChanges() {
 	}
@@ -623,25 +655,34 @@ func identityFromEvent(event *event, accessor metav1.Object) objectReference {
 }
 
 // Dequeueing an event from graphChanges, updating graph, populating dirty_queue.
+// 从graphChanges中获取事件，更新图形，填充dirty_queue
+// (graphChanges队列里数据来源于各个资源的monitors监听资源变化回调addFunc、updateFunc、deleteFunc)
 func (gb *GraphBuilder) processGraphChanges() bool {
+	// 从graphChanges队列中获取事件
 	item, quit := gb.graphChanges.Get()
 	if quit {
 		return false
 	}
+	// 事件处理完成后，调用Done方法，将事件从graphChanges队列中移除
 	defer gb.graphChanges.Done(item)
+
+	// 事件类型
 	event, ok := item.(*event)
 	if !ok {
 		utilruntime.HandleError(fmt.Errorf("expect a *event, got %v", item))
 		return true
 	}
 	obj := event.obj
+	// 获取对象的accessor
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("cannot access obj: %v", err))
 		return true
 	}
 	klog.V(5).Infof("GraphBuilder process object: %s/%s, namespace %s, name %s, uid %s, event type %v, virtual=%v", event.gvk.GroupVersion().String(), event.gvk.Kind, accessor.GetNamespace(), accessor.GetName(), string(accessor.GetUID()), event.eventType, event.virtual)
+
 	// Check if the node already exists
+	// 检查节点是否已经存在
 	existingNode, found := gb.uidToNode.Read(accessor.GetUID())
 	if found && !event.virtual && !existingNode.isObserved() {
 		// this marks the node as having been observed via an informer event
@@ -672,7 +713,9 @@ func (gb *GraphBuilder) processGraphChanges() bool {
 		}
 		existingNode.markObserved()
 	}
+
 	switch {
+	// gc第一次运行时，uidToNode尚且没有初始化资源对象依赖关系图表结构，所以found为false，会新增节点
 	case (event.eventType == addEvent || event.eventType == updateEvent) && !found:
 		newNode := &node{
 			identity:           identityFromEvent(event, accessor),
@@ -684,8 +727,12 @@ func (gb *GraphBuilder) processGraphChanges() bool {
 		gb.insertNode(newNode)
 		// the underlying delta_fifo may combine a creation and a deletion into
 		// one event, so we need to further process the event.
+		// 底层delta_fifo可以将创建和删除组合成一个事件，因此我们需要进一步处理事件。
 		gb.processTransitions(event.oldObj, accessor, newNode)
+
+	// uidToNode已经初始化资源对象依赖关系图表结构，所以found为true
 	case (event.eventType == addEvent || event.eventType == updateEvent) && found:
+
 		// handle changes in ownerReferences
 		added, removed, changed := referencesDiffs(existingNode.owners, accessor.GetOwnerReferences())
 		if len(added) != 0 || len(removed) != 0 || len(changed) != 0 {

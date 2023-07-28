@@ -576,6 +576,7 @@ func determineResyncPeriod(desired, check time.Duration) time.Duration {
 const minimumResyncPeriod = 1 * time.Second
 
 func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEventHandler, resyncPeriod time.Duration) (ResourceEventHandlerRegistration, error) {
+	// 加锁
 	s.startedLock.Lock()
 	defer s.startedLock.Unlock()
 

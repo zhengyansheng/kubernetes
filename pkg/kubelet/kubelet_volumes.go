@@ -163,10 +163,13 @@ func (kl *Kubelet) removeOrphanedPodVolumeDirs(uid types.UID) []error {
 	return orphanVolumeErrors
 }
 
-// cleanupOrphanedPodDirs removes the volumes of pods that should not be
-// running and that have no containers running.  Note that we roll up logs here since it runs in the main loop.
+// cleanupOrphanedPodDirs removes the volumes of pods that should not be running and that have no containers running.
+// Note that we roll up logs here since it runs in the main loop.
+// cleanupOrphanedPodDirs 移除不应该运行的 pod 的卷，这些 pod 没有容器在运行。 注意，这里我们在主循环中运行，因此我们会滚动日志。
 func (kl *Kubelet) cleanupOrphanedPodDirs(pods []*v1.Pod, runningPods []*kubecontainer.Pod) error {
+	// 定义集合
 	allPods := sets.NewString()
+
 	for _, pod := range pods {
 		allPods.Insert(string(pod.UID))
 	}
@@ -174,6 +177,7 @@ func (kl *Kubelet) cleanupOrphanedPodDirs(pods []*v1.Pod, runningPods []*kubecon
 		allPods.Insert(string(pod.ID))
 	}
 
+	// 从磁盘上获取所有的 Pods {"uid1","uid2","uid3"}
 	found, err := kl.listPodsFromDisk()
 	if err != nil {
 		return err
@@ -190,6 +194,8 @@ func (kl *Kubelet) cleanupOrphanedPodDirs(pods []*v1.Pod, runningPods []*kubecon
 		// Doing so may result in corruption of data.
 		// TODO: getMountedVolumePathListFromDisk() call may be redundant with
 		// kl.getPodVolumePathListFromDisk(). Can this be cleaned up?
+
+		// pod 在节点上 volume 还存在
 		if podVolumesExist := kl.podVolumesExist(uid); podVolumesExist {
 			klog.V(3).InfoS("Orphaned pod found, but volumes are not cleaned up", "podUID", uid)
 			continue

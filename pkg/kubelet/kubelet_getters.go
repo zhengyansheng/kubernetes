@@ -45,13 +45,14 @@ import (
 // that may need to know where to write data without getting a whole kubelet
 // instance.
 func (kl *Kubelet) getRootDir() string {
+	// /var/lib/kubelet
 	return kl.rootDirectory
 }
 
 // getPodsDir returns the full path to the directory under which pod
 // directories are created.
 func (kl *Kubelet) getPodsDir() string {
-	return filepath.Join(kl.getRootDir(), config.DefaultKubeletPodsDirName)
+	return filepath.Join(kl.getRootDir(), config.DefaultKubeletPodsDirName) // pods
 }
 
 // getPluginsDir returns the full path to the directory under which plugin

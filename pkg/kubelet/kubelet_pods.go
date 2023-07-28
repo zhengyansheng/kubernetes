@@ -79,10 +79,12 @@ const (
 
 // Get a list of pods that have data directories.
 func (kl *Kubelet) listPodsFromDisk() ([]types.UID, error) {
+	// /var/lib/kubelet/pods
 	podInfos, err := os.ReadDir(kl.getPodsDir())
 	if err != nil {
 		return nil, err
 	}
+
 	pods := []types.UID{}
 	for i := range podInfos {
 		if podInfos[i].IsDir() {

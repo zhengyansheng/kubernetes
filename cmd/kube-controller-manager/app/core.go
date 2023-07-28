@@ -502,9 +502,11 @@ func startGarbageCollectorController(ctx context.Context, controllerContext Cont
 		return nil, false, nil
 	}
 
+	// 客户端
 	gcClientset := controllerContext.ClientBuilder.ClientOrDie("generic-garbage-collector")
 	discoveryClient := controllerContext.ClientBuilder.DiscoveryClientOrDie("generic-garbage-collector")
 
+	// *rest.Config
 	config := controllerContext.ClientBuilder.ConfigOrDie("generic-garbage-collector")
 	// Increase garbage collector controller's throughput: each object deletion takes two API calls,
 	// so to get |config.QPS| deletion rate we need to allow 2x more requests for this controller.
@@ -519,6 +521,7 @@ func startGarbageCollectorController(ctx context.Context, controllerContext Cont
 	for _, r := range controllerContext.ComponentConfig.GarbageCollectorController.GCIgnoredResources {
 		ignoredResources[schema.GroupResource{Group: r.Group, Resource: r.Resource}] = struct{}{}
 	}
+	// 创建gc
 	garbageCollector, err := garbagecollector.NewGarbageCollector(
 		gcClientset,
 		metadataClient,
@@ -531,13 +534,15 @@ func startGarbageCollectorController(ctx context.Context, controllerContext Cont
 		return nil, true, fmt.Errorf("failed to start the generic garbage collector: %v", err)
 	}
 
-	// Start the garbage collector.
-	// 启动gc收集器
+	// Start the garbage collector. default -> 20
 	workers := int(controllerContext.ComponentConfig.GarbageCollectorController.ConcurrentGCSyncs)
+
+	// 启动monitors和deleteWorkers、orphanWorkers (workers -> 20)
 	go garbageCollector.Run(ctx, workers)
 
 	// Periodically refresh the RESTMapper with new discovery information and sync the garbage collector.
 	// 定期使用新的 discovery 信息刷新 RESTMapper 并同步 gc
+	// 定时去获取一个集群内是否有新类型的资源对象的加入，并重新刷新monitors，以监听新类型的资源对象
 	go garbageCollector.Sync(discoveryClient, 30*time.Second, ctx.Done())
 
 	return garbageCollector, true, nil

@@ -50,6 +50,7 @@ import (
 )
 
 // ResourceResyncTime defines the resync period of the garbage collector's informers.
+// ResourceResyncTime 定义垃圾收集器的informers的重新同步周期。
 const ResourceResyncTime time.Duration = 0
 
 // GarbageCollector runs reflectors to watch for changes of managed API
@@ -63,20 +64,39 @@ const ResourceResyncTime time.Duration = 0
 // Note that having the dependencyGraphBuilder notify the garbage collector
 // ensures that the garbage collector operates with a graph that is at least as
 // up to date as the notification is sent.
+
+// GarbageCollector 运行反射器来监视托管API对象的更改，将结果汇总到单线程 dependencyGraphBuilder，构建一个缓存对象之间依赖关系的图形。
+// 由图变化触发，dependencyGraphBuilder将可能被垃圾收集的对象 排队到`attemptToDelete`队列，并将其依赖项需要孤立的对象排队到`attemptToOrphan`队列。
+// GarbageCollector具有使用这两个队列的工作人员，向API服务器发送请求以相应地删除更新对象。
+// 请注意，让dependencyGraphBuilder通知垃圾收集器确保垃圾收集器使用至少与发送通知一样最新的图形进行操作。
 type GarbageCollector struct {
-	restMapper     meta.ResettableRESTMapper
+	// resettableRESTMapper是一个RESTMapper，它能够在discovery资源类型时重置自己
+	restMapper meta.ResettableRESTMapper
+	// metadataClient 元数据客户端
 	metadataClient metadata.Interface
 	// garbage collector attempts to delete the items in attemptToDelete queue when the time is ripe.
+	// 垃圾收集器尝试在时间成熟时 删除attemptToDelete队列中的item
 	attemptToDelete workqueue.RateLimitingInterface
+
 	// garbage collector attempts to orphan the dependents of the items in the attemptToOrphan queue, then deletes the items.
-	attemptToOrphan        workqueue.RateLimitingInterface
+	// 垃圾收集器尝试孤立attemptToOrphan队列中item的依赖项，然后删除item
+	attemptToOrphan workqueue.RateLimitingInterface
+
+	// 依赖图的构建
 	dependencyGraphBuilder *GraphBuilder
+
 	// GC caches the owners that do not exist according to the API server.
+	// GC根据API服务器缓存不存在的所有者
+	// 有owner的资源对象,才会给absentOwnerCache填充不存在的Owner信息
 	absentOwnerCache *ReferenceCache
 
-	kubeClient       clientset.Interface
+	// clientSet
+	kubeClient clientset.Interface
+
+	// 事件
 	eventBroadcaster record.EventBroadcaster
 
+	// 互斥锁
 	workerLock sync.RWMutex
 }
 
@@ -163,17 +183,19 @@ func (gc *GarbageCollector) Run(ctx context.Context, workers int) {
 	// 依赖关系图形生成器
 	go gc.dependencyGraphBuilder.Run(ctx.Done())
 
+	// 等待 dependencyGraphBuilder 缓存同步完成
 	if !cache.WaitForNamedCacheSync("garbage collector", ctx.Done(), gc.dependencyGraphBuilder.IsSynced) {
 		return
 	}
 
+	// 垃圾收集器：所有资源监视器都已同步。继续收集垃圾
 	klog.Infof("Garbage collector: all resource monitors have synced. Proceeding to collect garbage")
 
 	// gc workers
 	for i := 0; i < workers; i++ {
-		// runAttemptToDeleteWorker 尝试删除 attemptToDelete 队列中的项目。
+		// 并发20个goroutine，间隔1秒运行，从attemptToDelete队列中删除work
 		go wait.UntilWithContext(ctx, gc.runAttemptToDeleteWorker, 1*time.Second)
-		// runAttemptToOrphanWorker 尝试孤立 attemptToOrphan 队列中的项目，然后删除它们。
+		// 并发20个goroutine，间隔1秒运行，从attemptToOrphanWorker队列中xxx
 		go wait.Until(gc.runAttemptToOrphanWorker, 1*time.Second, ctx.Done())
 	}
 
@@ -193,7 +215,7 @@ func (gc *GarbageCollector) Sync(discoveryClient discovery.ServerResourcesInterf
 
 	wait.Until(func() {
 		// Get the current resource list from discovery.
-		// 从discovery获取当前资源列表。
+		// 从 discoveryClient 获取当前可删除的资源列表 (有这三个权限"delete", "list", "watch")
 		newResources := GetDeletableResources(discoveryClient)
 
 		// This can occur if there is an internal error in GetDeletableResources.
@@ -326,13 +348,14 @@ func (gc *GarbageCollector) processAttemptToDeleteWorker(ctx context.Context) bo
 	if quit {
 		return false
 	}
+	// 删除 item
 	defer gc.attemptToDelete.Done(item)
 
 	action := gc.attemptToDeleteWorker(ctx, item)
 	switch action {
-	case forgetItem: // 忘记元素
+	case forgetItem: // 忘记元素，删除元素
 		gc.attemptToDelete.Forget(item)
-	case requeueItem: // 元素重新排队
+	case requeueItem: // 元素重新排队，限速队列中
 		gc.attemptToDelete.AddRateLimited(item)
 	}
 
@@ -342,14 +365,18 @@ func (gc *GarbageCollector) processAttemptToDeleteWorker(ctx context.Context) bo
 type workQueueItemAction int
 
 const (
+	// item 重新入队列
 	requeueItem = iota
+	// 忘记 item
 	forgetItem
 )
 
 // attemptToDeleteWorker attempts to delete the given item from the cluster.
 func (gc *GarbageCollector) attemptToDeleteWorker(ctx context.Context, item interface{}) workQueueItemAction {
+	// 断言node类型
 	n, ok := item.(*node)
 	if !ok {
+		// 断言失败直接返回 forgetItem
 		utilruntime.HandleError(fmt.Errorf("expect *node, got %#v", item))
 		return forgetItem
 	}
@@ -371,6 +398,7 @@ func (gc *GarbageCollector) attemptToDeleteWorker(ctx context.Context, item inte
 	}
 
 	err := gc.attemptToDeleteItem(ctx, n)
+
 	if err == enqueuedVirtualDeleteEventErr {
 		// a virtual event was produced and will be handled by processGraphChanges, no need to requeue this node
 		return forgetItem
@@ -404,18 +432,19 @@ func (gc *GarbageCollector) attemptToDeleteWorker(ctx context.Context, item inte
 }
 
 // isDangling check if a reference is pointing to an object that doesn't exist.
-// If isDangling looks up the referenced object at the API server, it also
-// returns its latest state.
-func (gc *GarbageCollector) isDangling(ctx context.Context, reference metav1.OwnerReference, item *node) (
-	dangling bool, owner *metav1.PartialObjectMetadata, err error) {
+// If isDangling looks up the referenced object at the API server, it also returns its latest state.
+// isDangling检查引用是否指向不存在的对象。
+// 如果isDangling在API服务器上查找引用的对象，它也会返回其最新状态。
+func (gc *GarbageCollector) isDangling(ctx context.Context, reference metav1.OwnerReference, item *node) (dangling bool, owner *metav1.PartialObjectMetadata, err error) {
 
 	// check for recorded absent cluster-scoped parent
+	// 检查记录的缺少的集群范围的父项 (非名称空间范围内）
 	absentOwnerCacheKey := objectReference{OwnerReference: ownerReferenceCoordinates(reference)}
 	if gc.absentOwnerCache.Has(absentOwnerCacheKey) {
 		klog.V(5).Infof("according to the absentOwnerCache, object %s's owner %s/%s, %s does not exist", item.identity.UID, reference.APIVersion, reference.Kind, reference.Name)
 		return true, nil, nil
 	}
-	// check for recorded absent namespaced parent
+	// check for recorded absent namespaced parent （名称空间范围内）
 	absentOwnerCacheKey.Namespace = item.identity.Namespace
 	if gc.absentOwnerCache.Has(absentOwnerCacheKey) {
 		klog.V(5).Infof("according to the absentOwnerCache, object %s's owner %s/%s, %s does not exist in namespace %s", item.identity.UID, reference.APIVersion, reference.Kind, reference.Name, item.identity.Namespace)
@@ -444,8 +473,8 @@ func (gc *GarbageCollector) isDangling(ctx context.Context, reference metav1.Own
 	}
 
 	// TODO: It's only necessary to talk to the API server if the owner node
-	// is a "virtual" node. The local graph could lag behind the real
-	// status, but in practice, the difference is small.
+	// is a "virtual" node. The local graph could lag behind the real status, but in practice, the difference is small.
+	// 是一个“虚拟”节点。局部图可能落后于实际状态，但在实践中，差异很小。
 	owner, err = gc.metadataClient.Resource(resource).Namespace(resourceDefaultNamespace(namespaced, item.identity.Namespace)).Get(ctx, reference.Name, metav1.GetOptions{})
 	switch {
 	case errors.IsNotFound(err):
@@ -472,8 +501,9 @@ func (gc *GarbageCollector) isDangling(ctx context.Context, reference metav1.Own
 // This function communicates with the server.
 func (gc *GarbageCollector) classifyReferences(ctx context.Context, item *node, latestReferences []metav1.OwnerReference) (
 	solid, dangling, waitingForDependentsDeletion []metav1.OwnerReference, err error) {
-	for _, reference := range latestReferences {
-		isDangling, owner, err := gc.isDangling(ctx, reference, item)
+
+	for _, reference := range latestReferences { // latestReferences -> owner
+		isDangling, owner, err := gc.isDangling(ctx, reference, item) // false, owner, nil
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -487,8 +517,10 @@ func (gc *GarbageCollector) classifyReferences(ctx context.Context, item *node, 
 			return nil, nil, nil, err
 		}
 		if ownerAccessor.GetDeletionTimestamp() != nil && hasDeleteDependentsFinalizer(ownerAccessor) {
+			// 要删除的依赖项
 			waitingForDependentsDeletion = append(waitingForDependentsDeletion, reference)
 		} else {
+			// 有效的
 			solid = append(solid, reference)
 		}
 	}
@@ -520,7 +552,11 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 	}
 	// TODO: It's only necessary to talk to the API server if this is a
 	// "virtual" node. The local graph could lag behind the real status, but in practice, the difference is small.
+	//klog.Infof("-----> attempting to delete item %+v", item)
+	klog.InfoS("----> Processing object", "object", klog.KRef(item.identity.Namespace, item.identity.Name), "objectUID", item.identity.UID, "kind", item.identity.Kind, "virtual", !item.isObserved())
+	klog.Infof("-----> attempting to delete item identity %+v", item.identity)
 	latest, err := gc.getObject(item.identity)
+	klog.Infof("-----> attempting to delete item latest %+v", latest)
 	switch {
 	case errors.IsNotFound(err):
 		// the GraphBuilder can add "virtual" node for an owner that doesn't
@@ -546,22 +582,34 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 	}
 
 	// compute if we should delete the item
-	ownerReferences := latest.GetOwnerReferences()
-	if len(ownerReferences) == 0 {
+	ownerReferences := latest.GetOwnerReferences() // 获取owner (rs的owner是deployment，pod的owner是rs）
+	if len(ownerReferences) == 0 {                 // 如果没有owner，直接返回
 		klog.V(2).Infof("object %s's doesn't have an owner, continue on next item", item.identity)
 		return nil
 	}
+	klog.Infof("-----> ownerReferences: %+v", ownerReferences)
 
 	// 核心逻辑 对引用分类处理
-	solid, dangling, waitingForDependentsDeletion, err := gc.classifyReferences(ctx, item, ownerReferences)
+	/*
+		solid: owner存在 或者 终结器不为 foregroundDeletion的owner集合
+		dangling: 不存在的owner集群
+		waitingForDependentsDeletion: owner存在，deletionTimestamp为非nil(删除)，终结器为foregroundDeletion的owner集合
+	*/
+	solid, dangling, waitingForDependentsDeletion, err := gc.classifyReferences(ctx, item, ownerReferences) // 分类引用 (rs)
 	if err != nil {
 		return err
 	}
 	klog.V(5).Infof("classify references of %s.\nsolid: %#v\ndangling: %#v\nwaitingForDependentsDeletion: %#v\n", item.identity, solid, dangling, waitingForDependentsDeletion)
 
+	klog.Infof("-----> solid: %+v", solid)
+	klog.Infof("-----> dangling: %+v", dangling)
+	klog.Infof("-----> waitingForDependentsDeletion: %+v", waitingForDependentsDeletion)
 	switch {
-	case len(solid) != 0:
+	case len(solid) != 0: // solid 不为空，即item存在没被删除的owner
+
 		klog.V(2).Infof("object %#v has at least one existing owner: %#v, will not garbage collect", item.identity, solid)
+
+		// 当dangling和waitingForDependentsDeletion都为空，则直接返回
 		if len(dangling) == 0 && len(waitingForDependentsDeletion) == 0 {
 			return nil
 		}
@@ -569,22 +617,26 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 		// waitingForDependentsDeletion needs to be deleted from the
 		// ownerReferences, otherwise the referenced objects will be stuck with
 		// the FinalizerDeletingDependents and never get deleted.
+
+		// 合并两个集合owner uid
 		ownerUIDs := append(ownerRefsToUIDs(dangling), ownerRefsToUIDs(waitingForDependentsDeletion)...)
 		p, err := c.GenerateDeleteOwnerRefStrategicMergeBytes(item.identity.UID, ownerUIDs)
 		if err != nil {
 			return err
 		}
+		// 执行patch请求，将这些uid对应的ownerReferences从item中删除
 		_, err = gc.patch(item, p, func(n *node) ([]byte, error) {
 			return gc.deleteOwnerRefJSONMergePatch(n, ownerUIDs...)
 		})
 		return err
-	case len(waitingForDependentsDeletion) != 0 && item.dependentsLength() != 0:
+	case len(waitingForDependentsDeletion) != 0 && item.dependentsLength() != 0: // waitingForDependentsDeletion集合不为空，且item有从资源
 		deps := item.getDependents()
+
 		for _, dep := range deps {
+			// isDeletingDependents 判断是否正在删除从属关系
 			if dep.isDeletingDependents() {
 				// this circle detection has false positives, we need to
-				// apply a more rigorous detection if this turns out to be a
-				// problem.
+				// apply a more rigorous detection if this turns out to be a problem.
 				// there are multiple workers run attemptToDeleteItem in
 				// parallel, the circle detection can fail in a race condition.
 				klog.V(2).Infof("processing object %s, some of its owners and its dependent [%s] have FinalizerDeletingDependents, to prevent potential cycle, its ownerReferences are going to be modified to be non-blocking, then the object is going to be deleted with Foreground", item.identity, dep.identity)
@@ -592,6 +644,7 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 				if err != nil {
 					return err
 				}
+				// 执行patch请求，将FinalizerDeletingDependents从item中删除
 				if _, err := gc.patch(item, patch, gc.unblockOwnerReferencesJSONMergePatch); err != nil {
 					return err
 				}
@@ -604,7 +657,10 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 		// doesn't have dependents, the function will remove the
 		// FinalizerDeletingDependents from the item, resulting in the final
 		// deletion of the item.
+
+		// 后台删除策略
 		policy := metav1.DeletePropagationForeground
+		// 执行删除
 		return gc.deleteObject(item.identity, &policy)
 	default:
 		// item doesn't have any solid owner, so it needs to be garbage
@@ -613,17 +669,17 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 		// 删除策略
 		var policy metav1.DeletionPropagation
 		switch {
-		// 如果对象的metadata.finalizer中有 "orphan" 孤儿 则返回true
 		case hasOrphanFinalizer(latest):
 			// if an existing orphan finalizer is already on the object, honor it.
+			// 如果对象的metadata.finalizer中有 "orphan" 孤儿 则返回true
 			policy = metav1.DeletePropagationOrphan
-			// 如果对象的metadata.finalizer中有 "foregroundDeletion" 前台删除 则返回true
 		case hasDeleteDependentsFinalizer(latest): // "foregroundDeletion"
 			// if an existing foreground finalizer is already on the object, honor it.
+			// 如果对象的metadata.finalizer中有 "foregroundDeletion" 前台删除 则返回true，同步删除逻辑
 			policy = metav1.DeletePropagationForeground
 		default:
 			// otherwise, default to background.
-			// 默认后台删除
+			// 默认后台删除，异步删除逻辑
 			policy = metav1.DeletePropagationBackground
 		}
 		klog.V(2).InfoS("Deleting object", "object", klog.KRef(item.identity.Namespace, item.identity.Name),
@@ -636,11 +692,15 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 
 // process item that's waiting for its dependents to be deleted
 func (gc *GarbageCollector) processDeletingDependentsItem(item *node) error {
+	// blockingDependents item对象阻塞的从资源
 	blockingDependents := item.blockingDependents()
+
+	// 如果为0 直接删除
 	if len(blockingDependents) == 0 {
 		klog.V(2).Infof("remove DeleteDependents finalizer for item %s", item.identity)
-		return gc.removeFinalizer(item, metav1.FinalizerDeleteDependents)
+		return gc.removeFinalizer(item, metav1.FinalizerDeleteDependents) // "foregroundDeletion"
 	}
+	// 从资源添加到 attemptToDelete 队列中
 	for _, dep := range blockingDependents {
 		if !dep.isDeletingDependents() {
 			klog.V(2).Infof("adding %s to attemptToDelete, because its owner %s is deletingDependents", dep.identity, item.identity)
@@ -701,6 +761,7 @@ func (gc *GarbageCollector) runAttemptToOrphanWorker() {
 // these steps fail.
 func (gc *GarbageCollector) processAttemptToOrphanWorker() bool {
 	item, quit := gc.attemptToOrphan.Get()
+
 	gc.workerLock.RLock()
 	defer gc.workerLock.RUnlock()
 	if quit {
@@ -711,8 +772,10 @@ func (gc *GarbageCollector) processAttemptToOrphanWorker() bool {
 	action := gc.attemptToOrphanWorker(item)
 	switch action {
 	case forgetItem:
+		// 删除item
 		gc.attemptToOrphan.Forget(item)
 	case requeueItem:
+		// 延迟队列
 		gc.attemptToOrphan.AddRateLimited(item)
 	}
 
@@ -733,13 +796,14 @@ func (gc *GarbageCollector) attemptToOrphanWorker(item interface{}) workQueueIte
 	}
 	owner.dependentsLock.RUnlock()
 
+	// orphanDependents will remove the owner from the OwnerReferences of its dependents
 	err := gc.orphanDependents(owner.identity, dependents)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("orphanDependents for %s failed with %v", owner.identity, err))
 		return requeueItem
 	}
 	// update the owner, remove "orphaningFinalizer" from its finalizers list
-	err = gc.removeFinalizer(owner, metav1.FinalizerOrphanDependents)
+	err = gc.removeFinalizer(owner, metav1.FinalizerOrphanDependents) // "orphan"
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("removeOrphanFinalizer for %s failed with %v", owner.identity, err))
 		return requeueItem

@@ -31,6 +31,7 @@ import (
 )
 
 // cluster scoped resources don't have namespaces.  Default to the item's namespace, but clear it for cluster scoped resources
+// 集群范围的资源没有命名空间。默认为项的命名空间，但对于群集范围内的资源清除该命名空间
 func resourceDefaultNamespace(namespaced bool, defaultNamespace string) string {
 	if namespaced {
 		return defaultNamespace
@@ -57,6 +58,7 @@ func (gc *GarbageCollector) deleteObject(item objectReference, policy *metav1.De
 	uid := item.UID
 	preconditions := metav1.Preconditions{UID: &uid}
 	deleteOptions := metav1.DeleteOptions{Preconditions: &preconditions, PropagationPolicy: policy}
+
 	// 删除资源
 	return gc.metadataClient.Resource(resource).Namespace(resourceDefaultNamespace(namespaced, item.Namespace)).Delete(context.TODO(), item.Name, deleteOptions)
 }
@@ -80,6 +82,7 @@ func (gc *GarbageCollector) patchObject(item objectReference, patch []byte, pt t
 	if err != nil {
 		return nil, err
 	}
+	// 通过patch方式更新资源
 	return gc.metadataClient.Resource(resource).Namespace(resourceDefaultNamespace(namespaced, item.Namespace)).Patch(context.TODO(), item.Name, pt, patch, metav1.PatchOptions{})
 }
 

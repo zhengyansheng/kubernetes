@@ -40,18 +40,22 @@ func (s objectReference) String() string {
 // use the respective locks, so the return values of the getters can be
 // inconsistent.
 type node struct {
+	// 身份
 	identity objectReference
 	// dependents will be read by the orphan() routine, we need to protect it with a lock.
 	dependentsLock sync.RWMutex
 	// dependents are the nodes that have node.identity as a
 	// metadata.ownerReference.
+	// 从属节点是将 node.identity 作为 metadata.ownerReference 的节点。
 	dependents map[*node]struct{}
-	// this is set by processGraphChanges() if the object has non-nil DeletionTimestamp
-	// and has the FinalizerDeleteDependents.
-	deletingDependents     bool
+	// this is set by processGraphChanges() if the object has non-nil DeletionTimestamp and has the FinalizerDeleteDependents.
+	deletingDependents bool
+	// 读写锁
 	deletingDependentsLock sync.RWMutex
 	// this records if the object's deletionTimestamp is non-nil.
-	beingDeleted     bool
+	// beingDeleted 已经被删除
+	beingDeleted bool
+	// 读写锁
 	beingDeletedLock sync.RWMutex
 	// this records if the object was constructed virtually and never observed via informer event
 	virtual     bool

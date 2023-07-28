@@ -647,6 +647,7 @@ func StartControllers(ctx context.Context, controllerCtx ControllerContext, star
 		}
 		check := controllerhealthz.NamedPingChecker(controllerName)
 		if ctrl != nil {
+			// 注册debug接口，用来提供获取dot流程图接口
 			// check if the controller supports and requests a debugHandler
 			// and it needs the unsecuredMux to mount the handler onto.
 			if debuggable, ok := ctrl.(controller.Debuggable); ok && unsecuredMux != nil {
