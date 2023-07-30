@@ -563,6 +563,7 @@ func (rsc *ReplicaSetController) manageReplicas(ctx context.Context, filteredPod
 	// 计算需要创建的副本数
 	// 1. 3, 5 -> 2
 	// 2. 3, 2 -> -1
+	klog.Info("-----> manageReplicas")
 	diff := len(filteredPods) - int(*(rs.Spec.Replicas))
 
 	rsKey, err := controller.KeyFunc(rs)
@@ -643,6 +644,7 @@ func (rsc *ReplicaSetController) manageReplicas(ctx context.Context, filteredPod
 		for _, pod := range podsToDelete {
 			go func(targetPod *v1.Pod) {
 				defer wg.Done()
+				klog.Infof("-----> rs controller, Deleting pod %v/%v", targetPod.Namespace, targetPod.Name)
 				if err := rsc.podControl.DeletePod(ctx, rs.Namespace, targetPod.Name, rs); err != nil {
 					// Decrement the expected number of deletes because the informer won't observe this deletion
 					podKey := controller.PodKey(targetPod)
@@ -726,6 +728,7 @@ func (rsc *ReplicaSetController) syncReplicaSet(ctx context.Context, key string)
 	// 修改rs的 replicas
 	var manageReplicasErr error
 	if rsNeedsSync && rs.DeletionTimestamp == nil {
+		klog.Info("-------------------> rs controller, manageReplicas")
 		// manageReplicas 会根据 rs 的 spec.replicas 和 rs.status.replicas 来调整 pod 的数量
 		manageReplicasErr = rsc.manageReplicas(ctx, filteredPods, rs)
 	}

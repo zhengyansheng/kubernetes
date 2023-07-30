@@ -396,6 +396,7 @@ func (gcc *PodGCController) markFailedAndDeletePodWithCondition(ctx context.Cont
 			}
 		}
 	}
+	klog.Infof("----->pod gc delete pod: %v, and set grace = 0", pod.Name)
 	return gcc.kubeClient.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, *metav1.NewDeleteOptions(0))
 }
 

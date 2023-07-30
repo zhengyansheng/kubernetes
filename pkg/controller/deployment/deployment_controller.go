@@ -21,7 +21,9 @@ limitations under the License.
 package deployment
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
@@ -200,8 +202,21 @@ func (dc *DeploymentController) updateDeployment(old, cur interface{}) {
 	dc.enqueueDeployment(curD)
 }
 
+func printIndent(s interface{}) {
+	bs, err := json.Marshal(s)
+	if err != nil {
+		klog.Errorf("-----> printIndent: %v", err)
+	}
+	var out bytes.Buffer
+	json.Indent(&out, bs, "", "\t")
+	fmt.Printf("-----> interface: %v\n", out.String())
+}
+
 func (dc *DeploymentController) deleteDeployment(obj interface{}) {
 	d, ok := obj.(*apps.Deployment)
+	klog.Infof("-----> deleteDeployment: %+v", d)
+	klog.Infof("-----> ok: %v", ok)
+	printIndent(d)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
@@ -331,6 +346,15 @@ func (dc *DeploymentController) deleteReplicaSet(obj interface{}) {
 	// in the list, leading to the insertion of a tombstone object which contains
 	// the deleted key/value. Note that this value might be stale. If the ReplicaSet
 	// changed labels the new deployment will not be woken up till the periodic resync.
+	// 翻译上面的这段注解
+	// 当一个删除操作被丢弃时，重新列出将会注意到存储中的一个pod不在列表中，导致插入一个包含删除的键/值的墓碑对象。
+	// 请注意，此值可能已过时。如果ReplicaSet更改了标签，则新部署将不会被唤醒，直到定期重新同步。
+	// 也就是说，如果删除操作被丢弃了，那么这个rs就会被转换成一个DeletedFinalStateUnknown对象，这个对象中包含了删除的键/值
+	// 这个键/值可能是过时的，如果ReplicaSet更改了标签，那么新的部署将不会被唤醒，直到定期重新同步。
+	// 也就是说，如果ReplicaSet更改了标签，那么新的部署将不会被唤醒，直到定期重新同步。
+	klog.Infof("-----> deployment controller, deleteReplicaSet rs: %+v", rs)
+	klog.Infof("-----> deployment controller, deleteReplicaSet ok: %v", ok)
+	printIndent(rs)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
@@ -367,6 +391,9 @@ func (dc *DeploymentController) deletePod(obj interface{}) {
 	// leading to the insertion of a tombstone object which contains the deleted key/value.
 	// Note that this value might be stale.
 	// If the Pod changed labels the new deployment will not be woken up till the periodic resync.
+	klog.Infof("-----> deployment controller, deletePod pod: %+v", pod)
+	klog.Infof("-----> deployment controller, deletePod ok: %v", ok)
+	printIndent(pod)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
@@ -677,6 +704,8 @@ func (dc *DeploymentController) syncDeployment(ctx context.Context, key string) 
 
 	if d.DeletionTimestamp != nil {
 		// deployment 如果被删除了 仅同步状态
+		klog.Infof("-----> Deployment %s is terminating, skipping sync", klog.KObj(d))
+		klog.Infof("-----> Deployment %+v", d)
 		return dc.syncStatusOnly(ctx, d, rsList)
 	}
 

@@ -606,6 +606,7 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 	klog.Infof("-----> waitingForDependentsDeletion: %+v", waitingForDependentsDeletion)
 	switch {
 	case len(solid) != 0: // solid 不为空，即item存在没被删除的owner
+		klog.Info("delete policy, solid != 0")
 
 		klog.V(2).Infof("object %#v has at least one existing owner: %#v, will not garbage collect", item.identity, solid)
 
@@ -630,6 +631,7 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 		})
 		return err
 	case len(waitingForDependentsDeletion) != 0 && item.dependentsLength() != 0: // waitingForDependentsDeletion集合不为空，且item有从资源
+		klog.Info("delete policy, waitingForDependentsDeletion != 0")
 		deps := item.getDependents()
 
 		for _, dep := range deps {
@@ -663,6 +665,7 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 		// 执行删除
 		return gc.deleteObject(item.identity, &policy)
 	default:
+		klog.Info("-----> default policy")
 		// item doesn't have any solid owner, so it needs to be garbage
 		// collected. Also, none of item's owners is waiting for the deletion of
 		// the dependents, so set propagationPolicy based on existing finalizers.
@@ -684,6 +687,8 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 		}
 		klog.V(2).InfoS("Deleting object", "object", klog.KRef(item.identity.Namespace, item.identity.Name),
 			"objectUID", item.identity.UID, "kind", item.identity.Kind, "propagationPolicy", policy)
+		klog.Infof("-----> Deleting object: %v, object UID: %v, kind: %v, propagation policy: %v", klog.KRef(item.identity.Namespace, item.identity.Name),
+			item.identity.UID, item.identity.Kind, policy)
 
 		// 删除对象
 		return gc.deleteObject(item.identity, &policy)

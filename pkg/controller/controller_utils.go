@@ -590,6 +590,7 @@ func (r RealPodControl) DeletePod(ctx context.Context, namespace string, podID s
 		return fmt.Errorf("object does not have ObjectMeta, %v", err)
 	}
 	klog.V(2).InfoS("Deleting pod", "controller", accessor.GetName(), "pod", klog.KRef(namespace, podID))
+	klog.Infof("-----> Deleting pod", "controller", accessor.GetName(), "pod", klog.KRef(namespace, podID))
 	if err := r.KubeClient.CoreV1().Pods(namespace).Delete(ctx, podID, metav1.DeleteOptions{}); err != nil {
 		if apierrors.IsNotFound(err) {
 			klog.V(4).Infof("pod %v/%v has already been deleted.", namespace, podID)
