@@ -148,8 +148,8 @@ func (podStrategy) AllowUnconditionalUpdate() bool {
 	return true
 }
 
-// CheckGracefulDelete allows a pod to be gracefully deleted. It updates the DeleteOptions to
-// reflect the desired grace value.
+// CheckGracefulDelete allows a pod to be gracefully deleted. It updates the DeleteOptions to reflect the desired grace value.
+// CheckGracefulDelete允许优雅地删除pod。它会更新DeleteOptions以反映所需的宽限值。
 func (podStrategy) CheckGracefulDelete(ctx context.Context, obj runtime.Object, options *metav1.DeleteOptions) bool {
 	if options == nil {
 		return false
@@ -179,6 +179,7 @@ func (podStrategy) CheckGracefulDelete(ctx context.Context, obj runtime.Object, 
 	}
 
 	// ensure the options and the pod are in sync
+	// 确保选项和pod同步
 	options.GracePeriodSeconds = &period
 	return true
 }

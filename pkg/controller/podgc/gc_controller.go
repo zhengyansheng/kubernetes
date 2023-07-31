@@ -142,7 +142,10 @@ func (gcc *PodGCController) gc(ctx context.Context) {
 	// 回收 Orphaned 独立的pods
 	gcc.gcOrphaned(ctx, pods, nodes)
 
-	// 回收未调度的pods
+	/* 回收2种Pods
+	1. DeletionTimestamp 不等于 nil
+	2. NodeName 等于 nil
+	*/
 	gcc.gcUnscheduledTerminating(ctx, pods)
 }
 
@@ -397,6 +400,7 @@ func (gcc *PodGCController) markFailedAndDeletePodWithCondition(ctx context.Cont
 		}
 	}
 	klog.Infof("----->pod gc delete pod: %v, and set grace = 0", pod.Name)
+	// 强制设置成0
 	return gcc.kubeClient.CoreV1().Pods(pod.Namespace).Delete(ctx, pod.Name, *metav1.NewDeleteOptions(0))
 }
 

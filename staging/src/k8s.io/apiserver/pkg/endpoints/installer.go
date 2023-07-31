@@ -907,18 +907,25 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			addParams(route, action.Params)
 			routes = append(routes, route)
 		case "PATCH": // Partially update a resource
+			// 生成doc
 			doc := "partially update the specified " + kind
 			if isSubresource {
 				doc = "partially update " + subresource + " of the specified " + kind
 			}
+
+			// 定义 patch 类型
 			supportedTypes := []string{
 				string(types.JSONPatchType),
 				string(types.MergePatchType),
 				string(types.StrategicMergePatchType),
 				string(types.ApplyPatchType),
 			}
+
+			// 初始化 handler 核心 restfulPatchResource
 			handler := metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, deprecated, removedRelease, restfulPatchResource(patcher, reqScope, admit, supportedTypes))
 			handler = utilwarning.AddWarningsHandler(handler, warnings)
+
+			// 路由
 			route := ws.PATCH(action.Path).To(handler).
 				Doc(doc).
 				Param(ws.QueryParameter("pretty", "If 'true', then the output is pretty printed.")).
@@ -967,16 +974,19 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			addParams(route, action.Params)
 			routes = append(routes, route)
 		case "DELETE": // Delete a resource.
+			// 生成 doc
 			article := GetArticleForNoun(kind, " ")
 			doc := "delete" + article + kind
 			if isSubresource {
 				doc = "delete " + subresource + " of" + article + kind
 			}
+
+			// deleteReturnType 删除返回类型
 			deleteReturnType := versionedStatus
 			if deleteReturnsDeletedObject {
 				deleteReturnType = producedObject
 			}
-			// 初始化handler 核心 restfulDeleteResource
+			// 初始化 handler 核心 restfulDeleteResource
 			handler := metrics.InstrumentRouteFunc(action.Verb, group, version, resource, subresource, requestScope, metrics.APIServerComponent, deprecated, removedRelease, restfulDeleteResource(gracefulDeleter, isGracefulDeleter, reqScope, admit))
 			handler = utilwarning.AddWarningsHandler(handler, warnings)
 			// 路由
@@ -988,7 +998,10 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 				Writes(deleteReturnType).
 				Returns(http.StatusOK, "OK", deleteReturnType).
 				Returns(http.StatusAccepted, "Accepted", deleteReturnType)
+
+			// 是优雅删除
 			if isGracefulDeleter {
+				klog.Infof("-----> isGracefulDeleter <yes> versionedDeleterObject: %+v", versionedDeleterObject)
 				route.Reads(versionedDeleterObject)
 				route.ParameterNamed("body").Required(false)
 				if err := AddObjectParams(ws, route, versionedDeleteOptions); err != nil {
@@ -997,6 +1010,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			}
 			addParams(route, action.Params)
 			routes = append(routes, route)
+
 		case "DELETECOLLECTION":
 			doc := "delete collection of " + kind
 			if isSubresource {
@@ -1023,7 +1037,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			}
 			addParams(route, action.Params)
 			routes = append(routes, route)
-		// deprecated in 1.11
+		// deprecated in 1.11 // 1.11中已弃用
 		case "WATCH": // Watch a resource.
 			doc := "watch changes to an object of kind " + kind
 			if isSubresource {
@@ -1044,7 +1058,7 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			}
 			addParams(route, action.Params)
 			routes = append(routes, route)
-		// deprecated in 1.11
+		// deprecated in 1.11 1.11中已弃用
 		case "WATCHLIST": // Watch all resources of a kind.
 			doc := "watch individual changes to a list of " + kind
 			if isSubresource {
@@ -1103,11 +1117,13 @@ func (a *APIInstaller) registerResourceHandlers(path string, storage rest.Storag
 			return nil, nil, fmt.Errorf("unrecognized action verb: %s", action.Verb)
 		}
 		for _, route := range routes {
+			// "x-kubernetes-group-version-kind"
 			route.Metadata(ROUTE_META_GVK, metav1.GroupVersionKind{
 				Group:   reqScope.Kind.Group,
 				Version: reqScope.Kind.Version,
 				Kind:    reqScope.Kind.Kind,
 			})
+			// "x-kubernetes-action"
 			route.Metadata(ROUTE_META_ACTION, strings.ToLower(action.Verb))
 			ws.Route(route)
 		}

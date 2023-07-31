@@ -72,11 +72,18 @@ type RESTGracefulDeleteStrategy interface {
 // where we set deletionTimestamp is pkg/registry/generic/registry/store.go.
 // This function is responsible for setting deletionTimestamp during gracefulDeletion,
 // other one for cascading deletions.
+// BeforeDelete 测试对象是否可以正常删除。
+// 如果设置了优雅，则应该优雅地删除对象。如果设置了 gracefulPending，则表示对象已被正常删除（并且提供的宽限期比删除时间长）。
+// 如果无法检查条件或gracePeriodSeconds无效，则返回错误。如果优雅为true，则选项参数可能会更新为默认值。我们设置deletionTimestamp的第二个地方是pkg/registry/general/registry/store.go。
+// 此函数负责在gracefulDelete期间设置deletionTimestamp，另一个用于级联删除。
+
 func BeforeDelete(strategy RESTDeleteStrategy, ctx context.Context, obj runtime.Object, options *metav1.DeleteOptions) (graceful, gracefulPending bool, err error) {
+	// gracefulPending 表示对象已经被删除
 	objectMeta, gvk, kerr := objectMetaAndKind(strategy, obj)
 	if kerr != nil {
 		return false, false, kerr
 	}
+	// options ->  {TypeMeta:{Kind:DeleteOptions APIVersion:meta.k8s.io/v1} GracePeriodSeconds:<nil> Preconditions:&Preconditions{UID:*7bb04c95-b811-437c-bd4d-aa03573eff46,ResourceVersion:nil,} OrphanDependents:<nil> PropagationPolicy:<nil> DryRun:[]}
 	if errs := validation.ValidateDeleteOptions(options); len(errs) > 0 {
 		return false, false, errors.NewInvalid(schema.GroupKind{Group: metav1.GroupName, Kind: "DeleteOptions"}, "", errs)
 	}
@@ -91,9 +98,11 @@ func BeforeDelete(strategy RESTDeleteStrategy, ctx context.Context, obj runtime.
 	}
 
 	// Negative values will be treated as the value `1s` on the delete path.
+	// 如果gracePeriodSeconds为负，则将其设置为1s。
 	if gracePeriodSeconds := options.GracePeriodSeconds; gracePeriodSeconds != nil && *gracePeriodSeconds < 0 {
 		options.GracePeriodSeconds = utilpointer.Int64(1)
 	}
+	// 如果 deletionGracePeriodSeconds 为负，则将其设置为1s。
 	if deletionGracePeriodSeconds := objectMeta.GetDeletionGracePeriodSeconds(); deletionGracePeriodSeconds != nil && *deletionGracePeriodSeconds < 0 {
 		objectMeta.SetDeletionGracePeriodSeconds(utilpointer.Int64(1))
 	}
@@ -105,6 +114,7 @@ func BeforeDelete(strategy RESTDeleteStrategy, ctx context.Context, obj runtime.
 		return false, false, nil
 	}
 	// if the object is already being deleted, no need to update generation.
+	// 如果对象已经被删除，则不需要更新Generation。
 	if objectMeta.GetDeletionTimestamp() != nil {
 		// if we are already being deleted, we may only shorten the deletion grace period
 		// this means the object was gracefully deleted previously but deletionGracePeriodSeconds was not set,
@@ -117,10 +127,27 @@ func BeforeDelete(strategy RESTDeleteStrategy, ctx context.Context, obj runtime.
 		// a resource was previously left in a state that was non-recoverable.  We
 		// check if the existing stored resource has a grace period as 0 and if so
 		// attempt to delete immediately in order to recover from this scenario.
+		/*
+			//如果我们已经被删除，我们可能只会缩短删除宽限期
+			//这意味着该对象之前已被正常删除，但未设置deletionGracePeriodSeconds，
+			//所以我们立即强制删除
+			//重要：
+			//删除操作分两个阶段进行。
+			//1。更新以设置DeletionGracePeriodSeconds和DeletionTimestamp
+			//2。从存储中删除对象。
+			//如果更新成功，但删除失败（网络错误、内部存储错误等），
+			//资源以前处于不可恢复的状态。我们检查现有存储资源的宽限期是否为0，如果是尝试立即删除以便从此场景中恢复。
+		*/
 		if objectMeta.GetDeletionGracePeriodSeconds() == nil || *objectMeta.GetDeletionGracePeriodSeconds() == 0 {
 			return false, false, nil
 		}
 		// only a shorter grace period may be provided by a user
+		// 用中文翻译下面这段代码
+		// 只有用户可以提供更短的宽限期 ？
+		// 如果用户提供的宽限期大于当前宽限期，那么就不需要更新宽限期
+		// 如果用户提供的宽限期小于当前宽限期，那么就需要更新宽限期
+		// 如果用户没有提供宽限期，那么就不需要更新宽限期
+		// 如果用户提供的宽限期等于当前宽限期，那么就不需要更新宽限期
 		if options.GracePeriodSeconds != nil {
 			period := int64(*options.GracePeriodSeconds)
 			if period >= *objectMeta.GetDeletionGracePeriodSeconds() {
@@ -134,11 +161,13 @@ func BeforeDelete(strategy RESTDeleteStrategy, ctx context.Context, obj runtime.
 			return true, false, nil
 		}
 		// graceful deletion is pending, do nothing
+		// 优雅的删除正在等待，什么都不做
 		options.GracePeriodSeconds = objectMeta.GetDeletionGracePeriodSeconds()
 		return false, true, nil
 	}
 
 	// `CheckGracefulDelete` will be implemented by specific strategy
+	// 其实就是设置 options.GracePeriodSeconds 的值
 	if !gracefulStrategy.CheckGracefulDelete(ctx, obj, options) {
 		return false, false, nil
 	}
@@ -147,10 +176,11 @@ func BeforeDelete(strategy RESTDeleteStrategy, ctx context.Context, obj runtime.
 		return false, false, errors.NewInternalError(fmt.Errorf("options.GracePeriodSeconds should not be nil"))
 	}
 
-	// 设置删除时间戳 删除期限 和 generation
-	now := metav1.NewTime(metav1.Now().Add(time.Second * time.Duration(*options.GracePeriodSeconds))) // 当前时间+删除期限
-	objectMeta.SetDeletionTimestamp(&now)                                                             // 删除时间戳
-	objectMeta.SetDeletionGracePeriodSeconds(options.GracePeriodSeconds)                              // 删除宽限期
+	now := metav1.NewTime(metav1.Now().Add(time.Second * time.Duration(*options.GracePeriodSeconds))) // 当前时间+宽限期
+
+	// 设置当前对象的 metadata 属性 DeletionTimestamp, GracePeriodSeconds, Generation
+	objectMeta.SetDeletionTimestamp(&now)                                // 删除时间戳
+	objectMeta.SetDeletionGracePeriodSeconds(options.GracePeriodSeconds) // 删除宽限期
 	// If it's the first graceful deletion we are going to set the DeletionTimestamp to non-nil.
 	// Controllers of the object that's being deleted shouldn't take any nontrivial actions, hence its behavior changes.
 	// Thus we need to bump object's Generation (if set). This handles generation bump during graceful deletion.

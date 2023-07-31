@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
+	
 	"k8s.io/apimachinery/pkg/util/sets"
-
+	
 	"k8s.io/klog/v2"
 	utiltrace "k8s.io/utils/trace"
 )
@@ -31,19 +31,19 @@ import (
 // DeltaFIFOOptions is the configuration parameters for DeltaFIFO. All are
 // optional.
 type DeltaFIFOOptions struct {
-
+	
 	// KeyFunction is used to figure out what key an object should have. (It's
 	// exposed in the returned DeltaFIFO's KeyOf() method, with additional
 	// handling around deleted objects and queue state).
 	// Optional, the default is MetaNamespaceKeyFunc.
 	KeyFunction KeyFunc
-
+	
 	// KnownObjects is expected to return a list of keys that the consumer of
 	// this queue "knows about". It is used to decide which items are missing
 	// when Replace() is called; 'Deleted' deltas are produced for the missing items.
 	// KnownObjects may be nil if you can tolerate missing deletions on Replace().
 	KnownObjects KeyListerGetter
-
+	
 	// EmitDeltaTypeReplaced indicates that the queue consumer
 	// understands the Replaced DeltaType. Before the `Replaced` event type was
 	// added, calls to Replace() were handled the same as Sync(). For
@@ -98,16 +98,16 @@ type DeltaFIFO struct {
 	// lock/cond protects access to 'items' and 'queue'.
 	lock sync.RWMutex
 	cond sync.Cond
-
+	
 	// `items` maps a key to a Deltas.
 	// Each such Deltas has at least one Delta.
 	items map[string]Deltas
-
+	
 	// `queue` maintains FIFO order of keys for consumption in Pop().
 	// There are no duplicates in `queue`.
 	// A key is in `queue` if and only if it is in `items`.
 	queue []string
-
+	
 	// populated is true if the first batch of items inserted by Replace() has been populated
 	// or Delete/Add/Update/AddIfNotPresent was called first.
 	// 如果对象通过 replace() 插入到队列中 或者或者Delete/Add/Update/AddIfNotPresent ，设置populated=true
@@ -115,19 +115,19 @@ type DeltaFIFO struct {
 	// initialPopulationCount is the number of items inserted by the first call of Replace()
 	// initialPopulationCount 是对象的数量 通过调用Replace()
 	initialPopulationCount int
-
+	
 	// keyFunc is used to make the key used for queued item
 	// insertion and retrieval, and should be deterministic.
 	keyFunc KeyFunc
-
+	
 	// knownObjects list keys that are "known" --- affecting Delete(),
 	// Replace(), and Resync()
 	knownObjects KeyListerGetter
-
+	
 	// Used to indicate a queue is closed so a control loop can exit when a queue is empty.
 	// Currently, not used to gate any of CRUD operations.
 	closed bool
-
+	
 	// emitDeltaTypeReplaced is whether to emit the Replaced or Sync
 	// DeltaType when Replace() is called (to preserve backwards compat).
 	emitDeltaTypeReplaced bool
@@ -221,13 +221,13 @@ func NewDeltaFIFOWithOptions(opts DeltaFIFOOptions) *DeltaFIFO {
 	if opts.KeyFunction == nil {
 		opts.KeyFunction = MetaNamespaceKeyFunc
 	}
-
+	
 	f := &DeltaFIFO{
 		items:        map[string]Deltas{},
 		queue:        []string{},
 		keyFunc:      opts.KeyFunction,
 		knownObjects: opts.KnownObjects,
-
+		
 		emitDeltaTypeReplaced: opts.EmitDeltaTypeReplaced,
 	}
 	f.cond.L = &f.lock
@@ -333,7 +333,7 @@ func (f *DeltaFIFO) Delete(obj interface{}) error {
 			return nil
 		}
 	}
-
+	
 	// exist in items and/or KnownObjects
 	return f.queueActionLocked(Deleted, obj)
 }
@@ -369,7 +369,7 @@ func (f *DeltaFIFO) addIfNotPresent(id string, deltas Deltas) {
 	if _, exists := f.items[id]; exists {
 		return
 	}
-
+	
 	f.queue = append(f.queue, id)
 	f.items[id] = deltas
 	f.cond.Broadcast()
@@ -426,7 +426,7 @@ func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) err
 	oldDeltas := f.items[id]
 	newDeltas := append(oldDeltas, Delta{actionType, obj})
 	newDeltas = dedupDeltas(newDeltas)
-
+	
 	if len(newDeltas) > 0 {
 		if _, exists := f.items[id]; !exists {
 			f.queue = append(f.queue, id)
@@ -535,7 +535,7 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 			if f.closed {
 				return nil, ErrFIFOClosed
 			}
-
+			
 			// 挂起
 			f.cond.Wait()
 		}
@@ -594,15 +594,15 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 	// list 是api server中的对象
 	f.lock.Lock()
 	defer f.lock.Unlock()
-
+	
 	keys := make(sets.String, len(list))
-
+	
 	// keep backwards compat for old clients
 	action := Sync
 	if f.emitDeltaTypeReplaced {
 		action = Replaced
 	}
-
+	
 	// Add Sync/Replaced action for each new item.
 	for _, item := range list {
 		key, err := f.KeyOf(item)
@@ -614,7 +614,7 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 			return fmt.Errorf("couldn't enqueue object: %v", err)
 		}
 	}
-
+	
 	if f.knownObjects == nil {
 		// Do deletion detection against our own list.
 		queuedDeletions := 0 // 检测出要删除的对象个数
@@ -634,17 +634,17 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 				return err
 			}
 		}
-
+		
 		if !f.populated {
 			f.populated = true
 			// While there shouldn't be any queued deletions in the initial
 			// population of the queue, it's better to be on the safe side.
 			f.initialPopulationCount = keys.Len() + queuedDeletions
 		}
-
+		
 		return nil
 	}
-
+	
 	// Detect deletions not already in the queue.
 	knownKeys := f.knownObjects.ListKeys()
 	queuedDeletions := 0
@@ -652,7 +652,7 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 		if keys.Has(k) {
 			continue
 		}
-
+		
 		deletedObj, exists, err := f.knownObjects.GetByKey(k)
 		if err != nil {
 			deletedObj = nil
@@ -666,12 +666,12 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 			return err
 		}
 	}
-
+	
 	if !f.populated {
 		f.populated = true
 		f.initialPopulationCount = keys.Len() + queuedDeletions
 	}
-
+	
 	return nil
 }
 
@@ -681,11 +681,11 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 func (f *DeltaFIFO) Resync() error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-
+	
 	if f.knownObjects == nil {
 		return nil
 	}
-
+	
 	keys := f.knownObjects.ListKeys() // indexer中的对象
 	for _, k := range keys {
 		if err := f.syncKeyLocked(k); err != nil {
@@ -704,7 +704,7 @@ func (f *DeltaFIFO) syncKeyLocked(key string) error {
 		klog.Infof("Key %v does not exist in known objects store, unable to queue object for sync", key)
 		return nil
 	}
-
+	
 	// If we are doing Resync() and there is already an event queued for that object,
 	// we ignore the Resync for it. This is to avoid the race, in which the resync
 	// comes with the previous value of object (since queueing an event for the object
@@ -716,7 +716,7 @@ func (f *DeltaFIFO) syncKeyLocked(key string) error {
 	if len(f.items[id]) > 0 {
 		return nil
 	}
-
+	
 	if err := f.queueActionLocked(Sync, obj); err != nil {
 		return fmt.Errorf("couldn't queue object: %v", err)
 	}
@@ -771,6 +771,9 @@ func copyDeltas(d Deltas) Deltas {
 // was deleted but the watch deletion event was missed while disconnected from
 // apiserver. In this case we don't know the final "resting" state of the object, so
 // there's a chance the included `Obj` is stale.
+// 翻译上面的这段注解
+// DeletedFinalStateUnknown是在对象被删除但是在与apiserver断开连接时丢失了watch删除事件的情况下放入DeltaFIFO的。
+// 在这种情况下，我们不知道对象的最终“静止”状态，因此包含的`Obj`可能过时。
 type DeletedFinalStateUnknown struct {
 	Key string
 	Obj interface{}

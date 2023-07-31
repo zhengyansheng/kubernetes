@@ -195,6 +195,7 @@ type Store struct {
 	AfterDelete AfterDeleteFunc
 	// ReturnDeletedObject determines whether the Store returns the object
 	// that was deleted. Otherwise, return a generic success status response.
+	// ReturnDeletedObject确定Store是否返回对象 已删除。否则，返回一个通用的成功状态响应。
 	ReturnDeletedObject bool
 	// ShouldDeleteDuringUpdate is an optional function to determine whether
 	// an update from existing to obj should result in a delete.
@@ -1060,16 +1061,18 @@ func (e *Store) Delete(ctx context.Context, name string, deleteValidation rest.V
 		preconditions.ResourceVersion = options.Preconditions.ResourceVersion
 	}
 	// 核心逻辑 (SetDeletionTimestamp, SetDeletionGracePeriodSeconds)
-	graceful, pendingGraceful, err := rest.BeforeDelete(e.DeleteStrategy, ctx, obj, options)
+	graceful, pendingGraceful, err := rest.BeforeDelete(e.DeleteStrategy, ctx, obj, options) // true,false,nil
 	if err != nil {
 		return nil, false, err
 	}
 	// this means finalizers cannot be updated via DeleteOptions if a deletion is already pending
+	// 这意味着如果已经有删除操作在进行中，那么不能通过 DeleteOptions 更新 finalizers
 	if pendingGraceful {
 		out, err := e.finalizeDelete(ctx, obj, false, options)
 		return out, false, err
 	}
 	// check if obj has pending finalizers
+	// 检查对象是否有 pending finalizers
 	accessor, err := meta.Accessor(obj)
 	if err != nil {
 		return nil, false, apierrors.NewInternalError(err)
@@ -1122,6 +1125,8 @@ func (e *Store) Delete(ctx context.Context, name string, deleteValidation rest.V
 	klog.V(6).InfoS("Going to delete object from registry", "object", klog.KRef(genericapirequest.NamespaceValue(ctx), name))
 	out = e.NewFunc()
 	// 调用 Storage.Delete 方法删除对象
+	klog.Infof("-----> delete key: %v", key)
+	klog.Infof("-----> delete out: %+v", out)
 	if err := e.Storage.Delete(ctx, key, out, &preconditions, storage.ValidateObjectFunc(deleteValidation), dryrun.IsDryRun(options.DryRun), nil); err != nil {
 		// Please refer to the place where we set ignoreNotFound for the reason
 		// why we ignore the NotFound error .
@@ -1234,6 +1239,7 @@ func (e *Store) DeleteCollection(ctx context.Context, deleteValidation rest.Vali
 	}
 	wg.Wait()
 	// notify distributor to exit
+	// 通知分发器退出
 	close(workersExited)
 	<-distributorExited
 	select {
@@ -1263,6 +1269,7 @@ func (e *Store) finalizeDelete(ctx context.Context, obj runtime.Object, runHooks
 	if err != nil {
 		return nil, err
 	}
+
 	qualifiedResource := e.qualifiedResourceFromContext(ctx)
 	details := &metav1.StatusDetails{
 		Name:  accessor.GetName(),
