@@ -158,6 +158,7 @@ func NewGarbageCollector(
 // (and only) those resources present in the map are monitored.
 func (gc *GarbageCollector) resyncMonitors(deletableResources map[schema.GroupVersionResource]struct{}) error {
 
+	// syncMonitors 同步监视器
 	if err := gc.dependencyGraphBuilder.syncMonitors(deletableResources); err != nil {
 		return err
 	}
@@ -167,12 +168,14 @@ func (gc *GarbageCollector) resyncMonitors(deletableResources map[schema.GroupVe
 
 // Run starts garbage collector workers.
 func (gc *GarbageCollector) Run(ctx context.Context, workers int) {
+	// 延迟关闭
 	defer utilruntime.HandleCrash()
 	defer gc.attemptToDelete.ShutDown()
 	defer gc.attemptToOrphan.ShutDown()
 	defer gc.dependencyGraphBuilder.graphChanges.ShutDown()
 
 	// Start events processing pipeline.
+	// 处理 events pipeline
 	gc.eventBroadcaster.StartStructuredLogging(0)
 	gc.eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: gc.kubeClient.CoreV1().Events("")})
 	defer gc.eventBroadcaster.Shutdown()
@@ -181,6 +184,7 @@ func (gc *GarbageCollector) Run(ctx context.Context, workers int) {
 	defer klog.Infof("Shutting down garbage collector controller")
 
 	// 依赖关系图形生成器
+	// 添加item到 attemptToDelete 队列
 	go gc.dependencyGraphBuilder.Run(ctx.Done())
 
 	// 等待 dependencyGraphBuilder 缓存同步完成
@@ -343,6 +347,8 @@ var namespacedOwnerOfClusterScopedObjectErr = goerrors.New("cluster-scoped objec
 
 func (gc *GarbageCollector) processAttemptToDeleteWorker(ctx context.Context) bool {
 	item, quit := gc.attemptToDelete.Get()
+
+	// 加锁
 	gc.workerLock.RLock()
 	defer gc.workerLock.RUnlock()
 	if quit {
@@ -372,6 +378,7 @@ const (
 )
 
 // attemptToDeleteWorker attempts to delete the given item from the cluster.
+// attemptToDeleteWorker 尝试删除给定的 item
 func (gc *GarbageCollector) attemptToDeleteWorker(ctx context.Context, item interface{}) workQueueItemAction {
 	// 断言node类型
 	n, ok := item.(*node)
@@ -397,6 +404,7 @@ func (gc *GarbageCollector) attemptToDeleteWorker(ctx context.Context, item inte
 		}
 	}
 
+	// attemptToDeleteItem 删除 item
 	err := gc.attemptToDeleteItem(ctx, n)
 
 	if err == enqueuedVirtualDeleteEventErr {
@@ -577,7 +585,9 @@ func (gc *GarbageCollector) attemptToDeleteItem(ctx context.Context, item *node)
 
 	// TODO: attemptToOrphanWorker() routine is similar. Consider merging
 	// attemptToOrphanWorker() into attemptToDeleteItem() as well.
+	// item 对象是否有依赖正在删除
 	if item.isDeletingDependents() {
+		// 依赖添加到队列中
 		return gc.processDeletingDependentsItem(item)
 	}
 
@@ -718,6 +728,8 @@ func (gc *GarbageCollector) processDeletingDependentsItem(item *node) error {
 // dependents are copies of pointers to the owner's dependents, they don't need to be locked.
 func (gc *GarbageCollector) orphanDependents(owner objectReference, dependents []*node) error {
 	errCh := make(chan error, len(dependents))
+
+	// goroutine
 	wg := sync.WaitGroup{}
 	wg.Add(len(dependents))
 	for i := range dependents {
@@ -767,11 +779,14 @@ func (gc *GarbageCollector) runAttemptToOrphanWorker() {
 func (gc *GarbageCollector) processAttemptToOrphanWorker() bool {
 	item, quit := gc.attemptToOrphan.Get()
 
+	// 加锁
 	gc.workerLock.RLock()
 	defer gc.workerLock.RUnlock()
+	// 如果退出 直接返回
 	if quit {
 		return false
 	}
+
 	defer gc.attemptToOrphan.Done(item)
 
 	action := gc.attemptToOrphanWorker(item)
@@ -788,12 +803,14 @@ func (gc *GarbageCollector) processAttemptToOrphanWorker() bool {
 }
 
 func (gc *GarbageCollector) attemptToOrphanWorker(item interface{}) workQueueItemAction {
+	// 断言node
 	owner, ok := item.(*node)
 	if !ok {
 		utilruntime.HandleError(fmt.Errorf("expect *node, got %#v", item))
 		return forgetItem
 	}
 	// we don't need to lock each element, because they never get updated
+	// 我们不需要锁定每个元素，因为它们永远不会更新
 	owner.dependentsLock.RLock()
 	dependents := make([]*node, 0, len(owner.dependents))
 	for dependent := range owner.dependents {
@@ -802,6 +819,7 @@ func (gc *GarbageCollector) attemptToOrphanWorker(item interface{}) workQueueIte
 	owner.dependentsLock.RUnlock()
 
 	// orphanDependents will remove the owner from the OwnerReferences of its dependents
+	// orphanDependents 将从其依赖项的OwnerReferences中删除所有者
 	err := gc.orphanDependents(owner.identity, dependents)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("orphanDependents for %s failed with %v", owner.identity, err))

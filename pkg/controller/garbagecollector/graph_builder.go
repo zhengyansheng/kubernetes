@@ -22,7 +22,9 @@ import (
 	"sync"
 	"time"
 
+	apps "k8s.io/api/apps/v1"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/apis/core"
 
 	v1 "k8s.io/api/core/v1"
 	eventv1 "k8s.io/api/events/v1"
@@ -138,8 +140,8 @@ type monitor struct {
 	controller cache.Controller
 	store      cache.Store
 
-	// stopCh stops Controller. If stopCh is nil, the monitor is considered to be
-	// not yet started.
+	// stopCh stops Controller. If stopCh is nil, the monitor is considered to be not yet started.
+	// stopCh 停止控制器。如果stopCh为nil，则认为监视器尚未启动。
 	stopCh chan struct{}
 }
 
@@ -168,16 +170,18 @@ func (gb *GraphBuilder) controllerFor(resource schema.GroupVersionResource, kind
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			// TODO: check if there are differences in the ownerRefs,
 			// finalizers, and DeletionTimestamp; if not, ignore the update.
-			// TODO：检查 ownerRefs， finalizers和DeletionTimestamp是否存在差异; 如果没有，请忽略更新。
 			event := &event{
 				eventType: updateEvent,
 				obj:       newObj,
 				oldObj:    oldObj,
 				gvk:       kind,
 			}
+			if pod, ok := newObj.(*core.Pod); ok && pod.Namespace == "default" {
+				klog.Infof("-----> [controllerFor] UpdateFunc pod: %v", pod.Name)
+			}
 			gb.graphChanges.Add(event)
 		},
-		DeleteFunc: func(obj interface{}) {
+		DeleteFunc: func(obj interface{}) { // 执行 delete 操作会被监听到
 			// delta fifo may wrap the object in a cache.DeletedFinalStateUnknown, unwrap it
 			// delta fifo可以将对象包装在cache.DeletedFinalStateUnknown中，解包它
 			if deletedFinalStateUnknown, ok := obj.(cache.DeletedFinalStateUnknown); ok {
@@ -187,6 +191,11 @@ func (gb *GraphBuilder) controllerFor(resource schema.GroupVersionResource, kind
 				eventType: deleteEvent,
 				obj:       obj,
 				gvk:       kind,
+			}
+			klog.Infof("-----> [controllerFor] DeleteFunc delete gvk: %v", event.gvk)
+			if deployment, ok := obj.(*apps.Deployment); ok {
+				klog.Infof("-----> [controllerFor] DeleteFunc delete obj: %+v", deployment.ObjectMeta)
+				klog.Infof("-----> [controllerFor] DeleteFunc delete obj deletionTimestamp: %v", deployment.ObjectMeta.GetDeletionTimestamp())
 			}
 			gb.graphChanges.Add(event)
 		},
@@ -216,6 +225,7 @@ func (gb *GraphBuilder) controllerFor(resource schema.GroupVersionResource, kind
 // Run. Monitors are NOT started as part of the sync. To ensure all existing
 // monitors are started, call startMonitors.
 func (gb *GraphBuilder) syncMonitors(resources map[schema.GroupVersionResource]struct{}) error {
+	// 加锁
 	gb.monitorLock.Lock()
 	defer gb.monitorLock.Unlock()
 
@@ -228,20 +238,25 @@ func (gb *GraphBuilder) syncMonitors(resources map[schema.GroupVersionResource]s
 	kept := 0
 	added := 0
 	for resource := range resources {
+		// 如果是忽略的资源对象，直接跳过
 		if _, ok := gb.ignoredResources[resource.GroupResource()]; ok {
 			continue
 		}
+		// 如果已经存在，直接跳过
 		if m, ok := toRemove[resource]; ok {
 			current[resource] = m
 			delete(toRemove, resource)
 			kept++
 			continue
 		}
+		// 获取资源对象的kind
 		kind, err := gb.restMapper.KindFor(resource)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("couldn't look up resource %q: %v", resource, err))
 			continue
 		}
+		klog.Infof("-----> [syncMonitors] starting monitor for resource %+v, kind %v", resource, kind)
+		// controllerFor 核心逻辑
 		c, s, err := gb.controllerFor(resource, kind)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("couldn't start monitor for resource %q: %v", resource, err))
@@ -392,7 +407,7 @@ func (gb *GraphBuilder) addDependentToOwners(n *node, owners []metav1.OwnerRefer
 	// track if some of the referenced owners already exist in the graph and have been observed,
 	// and the dependent's ownerRef does not match their observed coordinates
 	hasPotentiallyInvalidOwnerReference := false
-
+	klog.Infof("-----> owners: %+v", owners)
 	for _, owner := range owners {
 		ownerNode, ok := gb.uidToNode.Read(owner.UID)
 		if !ok {
@@ -447,6 +462,7 @@ func (gb *GraphBuilder) addDependentToOwners(n *node, owners []metav1.OwnerRefer
 		// Enqueue the potentially invalid dependent node into attemptToDelete.
 		// The garbage processor will verify whether the owner references are dangling
 		// and delete the dependent if all owner references are confirmed absent.
+		klog.Infof("-----> enqueue potentially invalid node %+v into attemptToDelete", n.identity)
 		gb.attemptToDelete.Add(n)
 	}
 }
@@ -487,6 +503,8 @@ func (gb *GraphBuilder) reportInvalidNamespaceOwnerRef(n *node, invalidOwnerUID 
 // in n.owners, and adds the node to their dependents list.
 func (gb *GraphBuilder) insertNode(n *node) {
 	gb.uidToNode.Write(n)
+
+	// 添加依赖关系
 	gb.addDependentToOwners(n, n.owners)
 }
 
@@ -619,16 +637,26 @@ func (gb *GraphBuilder) addUnblockedOwnersToDeleteQueue(removed []metav1.OwnerRe
 	}
 }
 
+// processTransitions
 func (gb *GraphBuilder) processTransitions(oldObj interface{}, newAccessor metav1.Object, n *node) {
+	if newAccessor.GetName() == "nginx" {
+		klog.Info("--------------> 4")
+	}
+	// 直接删除pod不会进入这个逻辑
 	if startsWaitingForDependentsOrphaned(oldObj, newAccessor) {
 		klog.V(5).Infof("add %s to the attemptToOrphan", n.identity)
+		klog.Infof("-----> add %s to the attemptToOrphan, node: %+v", n.identity, n)
 		gb.attemptToOrphan.Add(n)
 		return
 	}
 	if startsWaitingForDependentsDeleted(oldObj, newAccessor) {
 		klog.V(2).Infof("add %s to the attemptToDelete, because it's waiting for its dependents to be deleted", n.identity)
+		klog.Infof("-----> add %s to the attemptToDelete, because it's waiting for its dependents to be deleted", n.identity)
+
 		// if the n is added as a "virtual" node, its deletingDependents field is not properly set, so always set it here.
 		n.markDeletingDependents()
+
+		klog.Infof("-----> n.dependents: %+v", n.dependents)
 		for dep := range n.dependents {
 			gb.attemptToDelete.Add(dep)
 		}
@@ -684,7 +712,12 @@ func (gb *GraphBuilder) processGraphChanges() bool {
 	// Check if the node already exists
 	// 检查节点是否已经存在
 	existingNode, found := gb.uidToNode.Read(accessor.GetUID())
+	if accessor.GetName() == "nginx" {
+		klog.Infof("-----> GraphBuilder process object: %s/%s, namespace %s, name %s, uid %s, event type %v, virtual=%v", event.gvk.GroupVersion().String(), event.gvk.Kind, accessor.GetNamespace(), accessor.GetName(), string(accessor.GetUID()), event.eventType, event.virtual)
+		klog.Infof("-----> existingNode: %v, found: %v", existingNode, found)
+	}
 	if found && !event.virtual && !existingNode.isObserved() {
+
 		// this marks the node as having been observed via an informer event
 		// 1. this depends on graphChanges only containing add/update events from the actual informer
 		// 2. this allows things tracking virtual nodes' existence to stop polling and rely on informer events
@@ -692,31 +725,44 @@ func (gb *GraphBuilder) processGraphChanges() bool {
 		if observedIdentity != existingNode.identity {
 			// find dependents that don't match the identity we observed
 			_, potentiallyInvalidDependents := partitionDependents(existingNode.getDependents(), observedIdentity)
+			if accessor.GetName() == "nginx" {
+				klog.Infof("--------------> 0, len(potentiallyInvalidDependents): %v", len(potentiallyInvalidDependents))
+			}
 			// add those potentially invalid dependents to the attemptToDelete queue.
 			// if their owners are still solid the attemptToDelete will be a no-op.
 			// this covers the bad child -> good parent observation sequence.
 			// the good parent -> bad child observation sequence is handled in addDependentToOwners
 			for _, dep := range potentiallyInvalidDependents {
+
 				if len(observedIdentity.Namespace) > 0 && dep.identity.Namespace != observedIdentity.Namespace {
 					// Namespace mismatch, this is definitely wrong
 					klog.V(2).Infof("node %s references an owner %s but does not match namespaces", dep.identity, observedIdentity)
 					gb.reportInvalidNamespaceOwnerRef(dep, observedIdentity.UID)
 				}
+				klog.Infof("-----> dep: %+v", dep)
 				gb.attemptToDelete.Add(dep)
 			}
 
 			// make a copy (so we don't modify the existing node in place), store the observed identity, and replace the virtual node
 			klog.V(2).Infof("replacing virtual node %s with observed node %s", existingNode.identity, observedIdentity)
+			klog.Infof("replacing virtual node %s with observed node %s", existingNode.identity, observedIdentity)
 			existingNode = existingNode.clone()
 			existingNode.identity = observedIdentity
 			gb.uidToNode.Write(existingNode)
+		}
+		if accessor.GetNamespace() == "default" {
+			klog.Info("---> markObserved")
 		}
 		existingNode.markObserved()
 	}
 
 	switch {
-	// gc第一次运行时，uidToNode尚且没有初始化资源对象依赖关系图表结构，所以found为false，会新增节点
+	// gc 第一次运行时，uidToNode尚且没有初始化资源对象依赖关系图表结构，所以found为false，会新增节点
 	case (event.eventType == addEvent || event.eventType == updateEvent) && !found:
+		if accessor.GetName() == "nginx" {
+			klog.Info("---> addEvent, updateEvent, found=false")
+		}
+		// 构建新的节点
 		newNode := &node{
 			identity:           identityFromEvent(event, accessor),
 			dependents:         make(map[*node]struct{}),
@@ -732,26 +778,42 @@ func (gb *GraphBuilder) processGraphChanges() bool {
 
 	// uidToNode已经初始化资源对象依赖关系图表结构，所以found为true
 	case (event.eventType == addEvent || event.eventType == updateEvent) && found:
-
 		// handle changes in ownerReferences
 		added, removed, changed := referencesDiffs(existingNode.owners, accessor.GetOwnerReferences())
-		if len(added) != 0 || len(removed) != 0 || len(changed) != 0 {
-			// check if the changed dependency graph unblock owners that are
-			// waiting for the deletion of their dependents.
+		if accessor.GetName() == "nginx" {
+			klog.Info("--------------> 1")
+			klog.Infof("---> addEvent:%v, updateEvent:%v, found=true", addEvent.String(), updateEvent.String())
+			klog.Infof("---> added:%v, removed:%v, changed:%v", added, removed, changed)
+		}
+		if len(added) != 0 || len(removed) != 0 || len(changed) != 0 { // 直接删除pod 无法进入这个逻辑
+			if accessor.GetName() == "nginx" {
+				klog.Info("--------------> 2")
+			}
+			// check if the changed dependency graph unblock owners that are waiting for the deletion of their dependents.
+			// 检查更改后的依赖关系图是否取消阻止正在等待删除其依赖关系的所有者
 			gb.addUnblockedOwnersToDeleteQueue(removed, changed)
 			// update the node itself
+			// 更新节点本身
 			existingNode.owners = accessor.GetOwnerReferences()
+
 			// Add the node to its new owners' dependent lists.
+			// 添加节点到其新所有者的依赖列表中
 			gb.addDependentToOwners(existingNode, added)
-			// remove the node from the dependent list of node that are no longer in
-			// the node's owners list.
+
+			// remove the node from the dependent list of node that are no longer in the node's owners list.
+			// 移除节点从不再在节点的所有者列表中的节点的依赖列表中
 			gb.removeDependentFromOwners(existingNode, removed)
 		}
 
 		if beingDeleted(accessor) {
+			if accessor.GetName() == "nginx" {
+				klog.Info("--------------> 3")
+			}
 			existingNode.markBeingDeleted()
 		}
+		// 直接删除pod会进入这个逻辑
 		gb.processTransitions(event.oldObj, accessor, existingNode)
+
 	case event.eventType == deleteEvent:
 		if !found {
 			klog.V(5).Infof("%v doesn't exist in the graph, this shouldn't happen", accessor.GetUID())
@@ -759,8 +821,10 @@ func (gb *GraphBuilder) processGraphChanges() bool {
 		}
 
 		removeExistingNode := true
-
 		if event.virtual {
+			if accessor.GetName() == "nginx" {
+				klog.Info("--------------> 5")
+			}
 			// this is a virtual delete event, not one observed from an informer
 			deletedIdentity := identityFromEvent(event, accessor)
 			if existingNode.virtual {
@@ -797,6 +861,9 @@ func (gb *GraphBuilder) processGraphChanges() bool {
 				}
 
 			} else if existingNode.identity != deletedIdentity {
+				if accessor.GetName() == "nginx" {
+					klog.Info("--------------> 6")
+				}
 				// do not remove the existing real node from the graph based on a virtual delete event
 				removeExistingNode = false
 
@@ -815,16 +882,25 @@ func (gb *GraphBuilder) processGraphChanges() bool {
 		}
 
 		if removeExistingNode {
+			if accessor.GetName() == "nginx" {
+				klog.Info("--------------> 7")
+			}
 			// removeNode updates the graph
 			gb.removeNode(existingNode)
+
+			// 加锁
 			existingNode.dependentsLock.RLock()
 			defer existingNode.dependentsLock.RUnlock()
 			if len(existingNode.dependents) > 0 {
 				gb.absentOwnerCache.Add(identityFromEvent(event, accessor))
 			}
+
+			klog.Infof("-----> existingNode dependents: %+v", existingNode.dependents)
 			for dep := range existingNode.dependents {
+				klog.Infof("-----> dep: %+v", dep)
 				gb.attemptToDelete.Add(dep)
 			}
+			klog.Infof("-----> existingNode owners: %+v", existingNode.owners)
 			for _, owner := range existingNode.owners {
 				ownerNode, found := gb.uidToNode.Read(owner.UID)
 				if !found || !ownerNode.isDeletingDependents() {
@@ -832,6 +908,7 @@ func (gb *GraphBuilder) processGraphChanges() bool {
 				}
 				// this is to let attempToDeleteItem check if all the owner's
 				// dependents are deleted, if so, the owner will be deleted.
+				klog.Infof("-----> ownerNode: %+v", ownerNode)
 				gb.attemptToDelete.Add(ownerNode)
 			}
 		}

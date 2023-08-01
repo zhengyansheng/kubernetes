@@ -511,6 +511,7 @@ func startGarbageCollectorController(ctx context.Context, controllerContext Cont
 	// Increase garbage collector controller's throughput: each object deletion takes two API calls,
 	// so to get |config.QPS| deletion rate we need to allow 2x more requests for this controller.
 	config.QPS *= 2
+	// 操作metadata属性的客户端
 	metadataClient, err := metadata.NewForConfig(config)
 	if err != nil {
 		return nil, true, err

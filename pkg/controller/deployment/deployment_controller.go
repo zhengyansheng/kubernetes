@@ -391,8 +391,7 @@ func (dc *DeploymentController) deletePod(obj interface{}) {
 	// leading to the insertion of a tombstone object which contains the deleted key/value.
 	// Note that this value might be stale.
 	// If the Pod changed labels the new deployment will not be woken up till the periodic resync.
-	klog.Infof("-----> deployment controller, deletePod pod: %+v", pod)
-	klog.Infof("-----> deployment controller, deletePod ok: %v", ok)
+	klog.Infof("-----> deployment controller, deletePod pod: %+v, ok: %v", pod, ok)
 	printIndent(pod)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
