@@ -505,8 +505,6 @@ func startGarbageCollectorController(ctx context.Context, controllerContext Cont
 	// 客户端
 	gcClientset := controllerContext.ClientBuilder.ClientOrDie("generic-garbage-collector")
 	discoveryClient := controllerContext.ClientBuilder.DiscoveryClientOrDie("generic-garbage-collector")
-
-	// *rest.Config
 	config := controllerContext.ClientBuilder.ConfigOrDie("generic-garbage-collector")
 	// Increase garbage collector controller's throughput: each object deletion takes two API calls,
 	// so to get |config.QPS| deletion rate we need to allow 2x more requests for this controller.

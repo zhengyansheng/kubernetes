@@ -70,8 +70,8 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// GenericInformer is type of SharedIndexInformer which will locate and delegate to other
-// sharedInformers based on type
+// GenericInformer is type of SharedIndexInformer which will locate and delegate to other sharedInformers based on type
+// GenericInformer是SharedIndexInformer的类型，它将根据类型定位并委托给其他SharedInform
 type GenericInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() cache.GenericLister
@@ -94,6 +94,8 @@ func (f *genericInformer) Lister() cache.GenericLister {
 
 // ForResource gives generic access to a shared informer of the matching type
 // TODO extend this to unknown resources with a client pool
+// ForResource为匹配类型的共享informer提供了通用访问权限
+// TODO使用客户端池将其扩展到未知资源
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
 	// Group=admissionregistration.k8s.io, Version=v1

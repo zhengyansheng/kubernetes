@@ -17,6 +17,8 @@ limitations under the License.
 package garbagecollector
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
@@ -301,16 +303,117 @@ func (gb *GraphBuilder) startMonitors() {
 
 	monitors := gb.monitors
 	started := 0
-	for _, monitor := range monitors {
+	var gvrs []string
+	for gvr, monitor := range monitors {
 		if monitor.stopCh == nil {
 			monitor.stopCh = make(chan struct{})
+			// 启动 informer
 			gb.sharedInformers.Start(gb.stopCh)
-			// TODO: 难道这里是启动所有的控制器
+			//klog.Infof("-----> start monitor gvr: %+v,", gvr.String())
+			gvrs = append(gvrs, gvr.String())
+
+			// 启动 controller
 			go monitor.Run()
 			started++
 		}
 	}
+	printIndent(gvrs)
+
 	klog.V(4).Infof("started %d new monitors, %d currently running", started, len(monitors))
+}
+
+/*
+[
+	"apps/v1, Resource=deployments",
+	"networking.istio.io/v1beta1, Resource=workloadentries",
+	"/v1, Resource=endpoints",
+	"crd.projectcalico.org/v1, Resource=felixconfigurations",
+	"networking.istio.io/v1beta1, Resource=virtualservices",
+	"extensions.istio.io/v1alpha1, Resource=wasmplugins",
+	"networking.k8s.io/v1, Resource=ingresses",
+	"/v1, Resource=limitranges",
+	"batch/v1, Resource=jobs",
+	"networking.k8s.io/v1, Resource=networkpolicies",
+	"/v1, Resource=replicationcontrollers",
+	"certificates.k8s.io/v1, Resource=certificatesigningrequests",
+	"/v1, Resource=persistentvolumeclaims",
+	"coordination.k8s.io/v1, Resource=leases",
+	"crd.projectcalico.org/v1, Resource=kubecontrollersconfigurations",
+	"rbac.authorization.k8s.io/v1, Resource=clusterrolebindings",
+	"networking.istio.io/v1beta1, Resource=sidecars",
+	"install.istio.io/v1alpha1, Resource=istiooperators",
+	"crd.projectcalico.org/v1, Resource=globalnetworkpolicies",
+	"scheduling.k8s.io/v1, Resource=priorityclasses",
+	"apiregistration.k8s.io/v1, Resource=apiservices",
+	"admissionregistration.k8s.io/v1, Resource=mutatingwebhookconfigurations",
+	"/v1, Resource=namespaces",
+	"networking.k8s.io/v1, Resource=ingressclasses",
+	"admissionregistration.k8s.io/v1, Resource=validatingwebhookconfigurations",
+	"/v1, Resource=services",
+	"crd.projectcalico.org/v1, Resource=networksets",
+	"crd.projectcalico.org/v1, Resource=bgpconfigurations",
+	"rbac.authorization.k8s.io/v1, Resource=roles",
+	"crd.projectcalico.org/v1, Resource=ipamhandles",
+	"/v1, Resource=pods",
+	"apiextensions.k8s.io/v1, Resource=customresourcedefinitions",
+	"/v1, Resource=persistentvolumes",
+	"/v1, Resource=nodes",
+	"apps/v1, Resource=daemonsets",
+	"crd.projectcalico.org/v1, Resource=clusterinformations",
+	"rbac.authorization.k8s.io/v1, Resource=rolebindings",
+	"crd.projectcalico.org/v1, Resource=globalnetworksets",
+	"autoscaling/v2, Resource=horizontalpodautoscalers",
+	"crd.projectcalico.org/v1, Resource=ippools",
+	"crd.projectcalico.org/v1, Resource=caliconodestatuses",
+	"flowcontrol.apiserver.k8s.io/v1beta3, Resource=flowschemas",
+	"crd.projectcalico.org/v1, Resource=ipamconfigs",
+	"apps/v1, Resource=controllerrevisions",
+	"crd.projectcalico.org/v1, Resource=ipamblocks",
+	"crd.projectcalico.org/v1, Resource=hostendpoints",
+	"networking.istio.io/v1beta1, Resource=gateways",
+	"storage.k8s.io/v1, Resource=volumeattachments",
+	"security.istio.io/v1, Resource=requestauthentications",
+	"crd.projectcalico.org/v1, Resource=blockaffinities",
+	"/v1, Resource=serviceaccounts",
+	"/v1, Resource=secrets",
+	"storage.k8s.io/v1, Resource=csistoragecapacities",
+	"/v1, Resource=resourcequotas",
+	"apps/v1, Resource=statefulsets",
+	"node.k8s.io/v1, Resource=runtimeclasses",
+	"networking.istio.io/v1beta1, Resource=workloadgroups",
+	"crd.projectcalico.org/v1, Resource=bgppeers",
+	"rbac.authorization.k8s.io/v1, Resource=clusterroles",
+	"telemetry.istio.io/v1alpha1, Resource=telemetries",
+	"storage.k8s.io/v1, Resource=storageclasses",
+	"storage.k8s.io/v1, Resource=csinodes",
+	"networking.istio.io/v1beta1, Resource=destinationrules",
+	"flowcontrol.apiserver.k8s.io/v1beta3, Resource=prioritylevelconfigurations",
+	"batch/v1, Resource=cronjobs",
+	"policy/v1, Resource=poddisruptionbudgets",
+	"storage.k8s.io/v1, Resource=csidrivers",
+	"/v1, Resource=podtemplates",
+	"discovery.k8s.io/v1, Resource=endpointslices",
+	"apps/v1, Resource=replicasets",
+	"crd.projectcalico.org/v1, Resource=ipreservations",
+	"/v1, Resource=configmaps",
+	"security.istio.io/v1, Resource=authorizationpolicies",
+	"crd.projectcalico.org/v1, Resource=networkpolicies",
+	"networking.istio.io/v1beta1, Resource=proxyconfigs",
+	"networking.istio.io/v1alpha3, Resource=envoyfilters",
+	"security.istio.io/v1beta1, Resource=peerauthentications",
+	"networking.istio.io/v1beta1, Resource=serviceentries",
+	"apps.hh.org/v1, Resource=appsets"
+]
+*/
+
+func printIndent(s interface{}) {
+	bs, err := json.Marshal(s)
+	if err != nil {
+		klog.Errorf("-----> printIndent: %v", err)
+	}
+	var out bytes.Buffer
+	json.Indent(&out, bs, "", "\t")
+	fmt.Printf("-----> interface: %v\n", out.String())
 }
 
 // IsSynced returns true if any monitors exist AND all those monitors'

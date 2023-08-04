@@ -54,20 +54,36 @@ import (
 type SharedInformerOption func(*sharedInformerFactory) *sharedInformerFactory
 
 type sharedInformerFactory struct {
+	// resources client
 	client           kubernetes.Interface
+
+	// 命名空间
 	namespace        string
+
+	// 用于调整 ListOptions 的函数
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
+
+	// 互斥锁
 	lock             sync.Mutex
+
+	// 默认的重新同步时间
 	defaultResync    time.Duration
+
+	// 自定义的重新同步时间
 	customResync     map[reflect.Type]time.Duration
 
+	// informers 携带了所有的 Indexinformer
 	informers map[reflect.Type]cache.SharedIndexInformer
+
 	// startedInformers is used for tracking which informers have been started.
 	// This allows Start() to be called multiple times safely.
 	// startedInformers: 用于跟踪已启动的 goroutine，允许安全的多次调用 Start()
 	startedInformers map[reflect.Type]bool
+
 	// wg tracks how many goroutines were started.
+	// wg: 跟踪启动了多少个 goroutine
 	wg sync.WaitGroup
+
 	// shuttingDown is true when Shutdown has been called.
 	// It may still be running because it needs to wait for goroutines.
 	// 当 Shutdown 被调用时，shuttingDown是true，它仍然正在运行，因为它要等待所有的 goroutines
@@ -189,31 +205,36 @@ func (f *sharedInformerFactory) WaitForCacheSync(stopCh <-chan struct{}) map[ref
 	return res
 }
 
-// InternalInformerFor returns the SharedIndexInformer for obj using an internal
-// client.
+// InternalInformerFor returns the SharedIndexInformer for obj using an internal client.
+// InternalInformerFor 返回使用内部客户端的 obj 的 SharedIndexInformer
 func (f *sharedInformerFactory) InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer {
+	// 加锁
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
+	// 获取对象的类型
 	informerType := reflect.TypeOf(obj)
 	informer, exists := f.informers[informerType]
 	if exists {
+		// 如果存在 则直接返回
 		return informer
 	}
-
+	// 如果不存在 则创建
 	resyncPeriod, exists := f.customResync[informerType]
 	if !exists {
+		// 如果不存在 则使用默认的 resyncPeriod
 		resyncPeriod = f.defaultResync
 	}
 
+	// 创建 informer 并保存到 f.informers 中
 	informer = newFunc(f.client, resyncPeriod)
 	f.informers[informerType] = informer
 
+	// 返回 informer
 	return informer
 }
 
-// SharedInformerFactory provides shared informers for resources in all known
-// API group versions.
+// SharedInformerFactory provides shared informers for resources in all known API group versions.
 //
 // It is typically used like this:
 //

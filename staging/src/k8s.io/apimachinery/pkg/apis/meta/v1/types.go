@@ -469,10 +469,11 @@ type DeleteOptions struct {
 	TypeMeta `json:",inline"`
 
 	// The duration in seconds before the object should be deleted. Value must be non-negative integer.
-	// The value zero indicates delete immediately. If this value is nil, the default grace period for the
-	// specified type will be used.
+	// The value zero indicates delete immediately. If this value is nil, the default grace period for the specified type will be used.
 	// Defaults to a per object value if not specified. zero means delete immediately.
 	// +optional
+	// 0 表示立即删除，如果为 nil，则使用默认的删除期限
+	// 宽限期秒数，删除对象之前的持续时间。值必须是非负整数。如果此值为零，则表示立即删除。如果未指定，则使用指定类型的默认宽限期。
 	GracePeriodSeconds *int64 `json:"gracePeriodSeconds,omitempty" protobuf:"varint,1,opt,name=gracePeriodSeconds"`
 
 	// Must be fulfilled before a deletion is carried out. If not possible, a 409 Conflict status will be

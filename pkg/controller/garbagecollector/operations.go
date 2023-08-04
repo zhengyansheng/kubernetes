@@ -60,7 +60,7 @@ func (gc *GarbageCollector) deleteObject(item objectReference, policy *metav1.De
 	deleteOptions := metav1.DeleteOptions{Preconditions: &preconditions, PropagationPolicy: policy}
 
 	// 删除资源
-	klog.Infof("-----> Deleting %s %s/%s", resource.Resource, resourceDefaultNamespace(namespaced, item.Namespace), item.Name)
+	klog.Infof("-----> Deleting %s %s/%s，deleteOptions %+v", resource.Resource, resourceDefaultNamespace(namespaced, item.Namespace), item.Name, deleteOptions)
 	return gc.metadataClient.Resource(resource).Namespace(resourceDefaultNamespace(namespaced, item.Namespace)).Delete(context.TODO(), item.Name, deleteOptions)
 }
 
