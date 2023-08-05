@@ -184,7 +184,7 @@ func (gc *GarbageCollector) Run(ctx context.Context, workers int) {
 	defer klog.Infof("Shutting down garbage collector controller")
 
 	// 依赖关系图形生成器
-	// 添加item到 attemptToDelete 队列
+	// 添加 item 到 attemptToDelete 队列
 	go gc.dependencyGraphBuilder.Run(ctx.Done())
 
 	// 等待 dependencyGraphBuilder 缓存同步完成
