@@ -62,8 +62,8 @@ func (dummyMutationDetector) AddObject(obj interface{}) {
 }
 
 // defaultCacheMutationDetector gives a way to detect if a cached object has been mutated
-// It has a list of cached objects and their copies.  I haven't thought of a way
-// to see WHO is mutating it, just that it's getting mutated.
+// It has a list of cached objects and their copies.
+// I haven't thought of a way to see WHO is mutating it, just that it's getting mutated.
 type defaultCacheMutationDetector struct {
 	name   string
 	period time.Duration
@@ -97,6 +97,7 @@ type cacheObj struct {
 func (d *defaultCacheMutationDetector) Run(stopCh <-chan struct{}) {
 	// we DON'T want protection from panics.  If we're running this code, we want to die
 	for {
+		// lastRotated 最后一次旋转时间
 		if d.lastRotated.IsZero() {
 			d.lastRotated = time.Now()
 		} else if time.Since(d.lastRotated) > d.retainDuration {

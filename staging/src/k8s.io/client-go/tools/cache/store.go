@@ -90,8 +90,8 @@ func (k KeyError) Unwrap() error {
 	return k.Err
 }
 
-// ExplicitKey can be passed to MetaNamespaceKeyFunc if you have the key for
-// the object but not the object itself.
+// ExplicitKey can be passed to MetaNamespaceKeyFunc if you have the key for the object but not the object itself.
+// 如果您有对象的键，但没有对象本身的键，则可以将ExplicitKey传递给MetaNamespaceKeyFunc。
 type ExplicitKey string
 
 // MetaNamespaceKeyFunc is a convenient default KeyFunc which knows how to make

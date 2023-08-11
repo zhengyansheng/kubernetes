@@ -140,6 +140,7 @@ type SharedInformer interface {
 	// It returns a registration handle for the handler that can be used to
 	// remove the handler again, or to tell if the handler is synced (has
 	// seen every item in the initial list).
+	// 添加资源事件处理器，当有资源变化时就会通过回调通知使用者
 	AddEventHandler(handler ResourceEventHandler) (ResourceEventHandlerRegistration, error)
 	// AddEventHandlerWithResyncPeriod adds an event handler to the
 	// shared informer with the requested resync period; zero means
@@ -157,6 +158,7 @@ type SharedInformer interface {
 	// be competing load and scheduling noise.
 	// It returns a registration handle for the handler that can be used to remove
 	// the handler again and an error if the handler cannot be added.
+	// 需要周期同步的资源事件处理器
 	AddEventHandlerWithResyncPeriod(handler ResourceEventHandler, resyncPeriod time.Duration) (ResourceEventHandlerRegistration, error)
 	// RemoveEventHandler removes a formerly added event handler given by
 	// its registration handle.
@@ -176,10 +178,12 @@ type SharedInformer interface {
 	// Note that this doesn't tell you if an individual handler is synced!!
 	// For that, please call HasSynced on the handle returned by
 	// AddEventHandler.
+	// 告诉使用者全量的对象是否已经同步到了本地存储中
 	HasSynced() bool
 	// LastSyncResourceVersion is the resource version observed when last synced with the underlying
 	// store. The value returned is not synchronized with access to the underlying store and is not
 	// thread-safe.
+	// 最新同步资源的版本号
 	LastSyncResourceVersion() string
 
 	// The WatchErrorHandler is called whenever ListAndWatch drops the
@@ -422,8 +426,10 @@ type updateNotification struct {
 	newObj interface{}
 }
 
+// addNotification 添加通知
 type addNotification struct {
-	newObj          interface{}
+	newObj interface{}
+	// isInInitialList 是否在初始列表中
 	isInInitialList bool
 }
 
@@ -456,17 +462,22 @@ func (s *sharedIndexInformer) SetTransform(handler TransformFunc) error {
 }
 
 func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
+	// 延迟处理panic
 	defer utilruntime.HandleCrash()
 
+	// 如果已经启动过了，就不允许再次启动
 	if s.HasStarted() {
 		klog.Warningf("The sharedIndexInformer has started, run more than once is not allowed")
 		return
 	}
+
+	// 创建 deltaFIFO (初始化 keyFunc)
 	fifo := NewDeltaFIFOWithOptions(DeltaFIFOOptions{
-		KnownObjects:          s.indexer,
+		KnownObjects:          s.indexer, // indexer
 		EmitDeltaTypeReplaced: true,
 	})
 
+	// 创建 config
 	cfg := &Config{
 		Queue:             fifo,
 		ListerWatcher:     s.listerWatcher,
@@ -476,32 +487,44 @@ func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
 		RetryOnError:      false,
 		ShouldResync:      s.processor.shouldResync,
 
-		Process:           s.HandleDeltas,
+		Process:           s.HandleDeltas, // (初始化 PopProcessFunc)
 		WatchErrorHandler: s.watchErrorHandler,
 	}
 
 	func() {
+		// 加锁
 		s.startedLock.Lock()
 		defer s.startedLock.Unlock()
 
+		// 创建 controller 并赋值给
 		s.controller = New(cfg)
 		s.controller.(*controller).clock = s.clock
+
 		s.started = true
 	}()
 
 	// Separate stop channel because Processor should be stopped strictly after controller
+	// 声明
 	processorStopCh := make(chan struct{})
 	var wg wait.Group
+
+	// 延迟处理
 	defer wg.Wait()              // Wait for Processor to stop
 	defer close(processorStopCh) // Tell Processor to stop
+
+	// 启动
+	// cacheMutationDetector 缓存变更检测器
 	wg.StartWithChannel(processorStopCh, s.cacheMutationDetector.Run)
 	wg.StartWithChannel(processorStopCh, s.processor.run)
 
+	// 延迟处理
 	defer func() {
 		s.startedLock.Lock()
 		defer s.startedLock.Unlock()
 		s.stopped = true // Don't want any new listeners
 	}()
+
+	// 启动 controller
 	s.controller.Run(stopCh)
 }
 
@@ -634,6 +657,7 @@ func (s *sharedIndexInformer) AddEventHandlerWithResyncPeriod(handler ResourceEv
 }
 
 func (s *sharedIndexInformer) HandleDeltas(obj interface{}, isInInitialList bool) error {
+	// 加锁
 	s.blockDeltas.Lock()
 	defer s.blockDeltas.Unlock()
 
@@ -710,6 +734,7 @@ type sharedProcessor struct {
 	listenersStarted bool
 	listenersLock    sync.RWMutex
 	// Map from listeners to whether or not they are currently syncing
+	// 从侦听器映射到它们当前是否正在同步
 	listeners map[*processorListener]bool
 	clock     clock.Clock
 	wg        wait.Group
@@ -794,16 +819,21 @@ func (p *sharedProcessor) distribute(obj interface{}, sync bool) {
 
 func (p *sharedProcessor) run(stopCh <-chan struct{}) {
 	func() {
+		// 加锁，防止在启动过程中有新的listener注册
 		p.listenersLock.RLock()
 		defer p.listenersLock.RUnlock()
+
+		// 启动所有的 listener
 		for listener := range p.listeners {
 			p.wg.Start(listener.run)
 			p.wg.Start(listener.pop)
 		}
+		// 标记所有的listener已经启动
 		p.listenersStarted = true
 	}()
 	<-stopCh
 
+	// Stop all listeners
 	p.listenersLock.Lock()
 	defer p.listenersLock.Unlock()
 	for listener := range p.listeners {
@@ -947,9 +977,11 @@ func (p *processorListener) pop() {
 				nextCh = nil // Disable this select case
 			}
 		case notificationToAdd, ok := <-p.addCh:
+			// channel 关闭则退出
 			if !ok {
 				return
 			}
+			// 首次是nil
 			if notification == nil { // No notification to pop (and pendingNotifications is empty)
 				// Optimize the case - skip adding to pendingNotifications
 				notification = notificationToAdd

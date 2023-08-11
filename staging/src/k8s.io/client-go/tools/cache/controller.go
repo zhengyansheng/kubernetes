@@ -120,7 +120,7 @@ type Controller interface {
 
 	// LastSyncResourceVersion delegates to the Reflector when there is one,
 	// otherwise returns the empty string
-	//
+	// Reflector 的最后同步的资源版本号
 	LastSyncResourceVersion() string
 }
 
@@ -175,7 +175,7 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 	// goroutine 启动 reflector，间接的启动 ListAndWatch
 	wg.StartWithChannel(stopCh, r.Run)
 
-	// 消费者
+	// 消费者 （s.HandleDeltas）
 	wait.Until(c.processLoop, time.Second, stopCh)
 
 	// 阻塞等待完成
@@ -205,15 +205,31 @@ func (c *controller) LastSyncResourceVersion() string {
 // actually exit when the controller is stopped. Or just give up on this stuff
 // ever being stoppable. Converting this whole package to use Context would
 // also be helpful.
+
 func (c *controller) processLoop() {
 	for {
+		/*
+			c.config.Queue 为 DeltaFIFO
+			c.config.Queue.Pop -> DeltaFIFO.Pop(...)
+
+			c.config.Process -> sharedIndexInformer.HandleDeltas
+			PopProcessFunc
+		*/
+
+		// type ProcessFunc func(obj interface{}, isInInitialList bool) error
+
+		// PopProcessFunc(c.config.Process) -> 转换成下面的👇
+		// p := PopProcessFunc( sharedIndexInformer.HandleDeltas )
 		obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
 		if err != nil {
+			// 队列关闭
 			if err == ErrFIFOClosed {
 				return
 			}
+			// 如果错误，重新入队
 			if c.config.RetryOnError {
 				// This is the safe way to re-enqueue.
+				// 重新添加到队列
 				c.config.Queue.AddIfNotPresent(obj)
 			}
 		}
@@ -473,7 +489,7 @@ func NewTransformingIndexerInformer(
 // Multiplexes updates in the form of a list of Deltas into a Store, and informs
 // a given handler of events OnUpdate, OnAdd, OnDelete
 func processDeltas(
-	// Object which receives event notifications from the given deltas
+// Object which receives event notifications from the given deltas
 	handler ResourceEventHandler,
 	clientState Store,
 	transformer TransformFunc,

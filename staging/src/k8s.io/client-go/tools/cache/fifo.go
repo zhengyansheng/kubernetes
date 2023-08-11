@@ -369,8 +369,7 @@ func (f *FIFO) Resync() error {
 	return nil
 }
 
-// NewFIFO returns a Store which can be used to queue up items to
-// process.
+// NewFIFO returns a Store which can be used to queue up items to process.
 func NewFIFO(keyFunc KeyFunc) *FIFO {
 	f := &FIFO{
 		items:   map[string]interface{}{},

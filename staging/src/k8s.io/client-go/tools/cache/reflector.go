@@ -339,6 +339,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			}
 			if r.ShouldResync == nil || r.ShouldResync() {
 				klog.V(4).Infof("%s: forcing resync", r.name)
+				// 定期同步数据到 Deltafifo
 				if err := r.store.Resync(); err != nil {
 					resyncerrc <- err
 					return
@@ -364,6 +365,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			ResourceVersion: r.LastSyncResourceVersion(),
 			// We want to avoid situations of hanging watchers. Stop any watchers that do not
 			// receive any events within the timeout window.
+			// 设置 Watch 超时，防止 Watch hang 住
 			TimeoutSeconds: &timeoutSeconds,
 			// To reduce load on kube-apiserver on watch restarts, you may enable watch bookmarks.
 			// Reflector doesn't assume bookmarks are returned at all (if the server do not support
@@ -377,6 +379,8 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 
 		// start the clock before sending the request, since some proxies won't flush headers until after the first watch event is sent
 		start := r.clock.Now()
+
+		// Watch 资源变化事件, 对应上图的 (3) 阶段
 		w, err := r.listerWatcher.Watch(options)
 		if err != nil {
 			// If this is "connection refused" error, it means that most likely apiserver is not responsive.
@@ -391,6 +395,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			return err
 		}
 
+		// 处理 Watch 的事件类型，将事件和数据 push 到 Deltafifo，对应上图的 (3) 阶段
 		err = watchHandler(start, w, r.store, r.expectedType, r.expectedGVK, r.name, r.typeDescription, r.setLastSyncResourceVersion, r.clock, resyncerrc, stopCh)
 		retry.After(err)
 		if err != nil {
@@ -425,9 +430,11 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 
 	initTrace := trace.New("Reflector ListAndWatch", trace.Field{Key: "name", Value: r.name})
 	defer initTrace.LogIfLong(10 * time.Second)
+
 	var list runtime.Object
 	var paginatedResult bool
 	var err error
+
 	listCh := make(chan struct{}, 1)
 	panicCh := make(chan interface{}, 1)
 	go func() {
@@ -436,19 +443,21 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 				panicCh <- r
 			}
 		}()
-		// Attempt to gather list in chunks, if supported by listerWatcher, if not, the first
-		// list request will return the full response.
+		// Attempt to gather list in chunks, if supported by listerWatcher, if not, the first list request will return the full response.
+		// 先去尝试分块 List，如果失败则全量 List
 		pager := pager.New(pager.SimplePageFunc(func(opts metav1.ListOptions) (runtime.Object, error) {
 			return r.listerWatcher.List(opts)
 		}))
 		switch {
-		case r.WatchListPageSize != 0:
+		case r.WatchListPageSize != 0: // 设置分页大小
 			pager.PageSize = r.WatchListPageSize
 		case r.paginatedResult:
 			// We got a paginated result initially. Assume this resource and server honor
 			// paging requests (i.e. watch cache is probably disabled) and leave the default
 			// pager size set.
+
 		case options.ResourceVersion != "" && options.ResourceVersion != "0":
+			// 如果 ResourceVersion 不等于 0, 说明已经 List 过了，所以设置分页为 0
 			// User didn't explicitly request pagination.
 			//
 			// With ResourceVersion != "", we have a possibility to list from watch cache,
@@ -466,6 +475,7 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 
 		list, paginatedResult, err = pager.List(context.Background(), options)
 		if isExpiredError(err) || isTooLargeResourceVersionError(err) {
+			// list 失败
 			r.setIsLastSyncResourceVersionUnavailable(true)
 			// Retry immediately if the resource version used to list is unavailable.
 			// The pager already falls back to full list if paginated list calls fail due to an "Expired" error on
@@ -473,6 +483,7 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 			// resource version it is listing at is expired or the cache may not yet be synced to the provided
 			// resource version. So we need to fallback to resourceVersion="" in all to recover and ensure
 			// the reflector makes forward progress.
+			// 重新设置 ResourceVersion，再去 List
 			list, paginatedResult, err = pager.List(context.Background(), metav1.ListOptions{ResourceVersion: r.relistResourceVersion()})
 		}
 		close(listCh)
@@ -516,6 +527,8 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 		return fmt.Errorf("unable to understand list result %#v (%v)", list, err)
 	}
 	initTrace.Step("Objects extracted")
+
+	// syncWith replaces the store's items with the given list.
 	if err := r.syncWith(items, resourceVersion); err != nil {
 		return fmt.Errorf("unable to sync list result: %v", err)
 	}
