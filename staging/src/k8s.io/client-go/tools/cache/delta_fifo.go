@@ -283,9 +283,6 @@ func (f *DeltaFIFO) HasSynced() bool {
 }
 
 func (f *DeltaFIFO) hasSynced_locked() bool {
-	// populated 被设置为true 当第一次调用 Add/Update/Delete/AddIfNotPresent 或者第一批通过 Replace() 插入的items被弹出。
-	// populated 永远不会被重置为false。
-	// initialPopulationCount 初始化 PopulationCount 用于跟踪第一批通过 Replace() 插入的items 被弹出的数量。
 	return f.populated && f.initialPopulationCount == 0
 }
 
@@ -436,6 +433,7 @@ func (f *DeltaFIFO) queueActionLocked(actionType DeltaType, obj interface{}) err
 	newDeltas = dedupDeltas(newDeltas)
 
 	if len(newDeltas) > 0 {
+		// 添加对象到集合中
 		if _, exists := f.items[id]; !exists {
 			f.queue = append(f.queue, id)
 		}
@@ -551,7 +549,6 @@ func (f *DeltaFIFO) Pop(process PopProcessFunc) (interface{}, error) {
 			f.cond.Wait()
 		}
 
-		// isInInitialList 表示是否在初始列表中
 		isInInitialList := !f.hasSynced_locked()
 
 		// id 是队列中的第一个元素
@@ -617,7 +614,7 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	// 定义数组
+	// 定义集合
 	keys := make(sets.String, len(list))
 
 	// keep backwards compat for old clients
@@ -634,12 +631,14 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 			return KeyError{item, err}
 		}
 		keys.Insert(key)
+
 		// 将对象添加到队列中并加锁
 		if err := f.queueActionLocked(action, item); err != nil {
 			return fmt.Errorf("couldn't enqueue object: %v", err)
 		}
 	}
 
+	//  knownObjects -> indexer
 	if f.knownObjects == nil {
 		// Do deletion detection against our own list.
 		queuedDeletions := 0 // 检测出要删除的对象个数
@@ -692,6 +691,7 @@ func (f *DeltaFIFO) Replace(list []interface{}, _ string) error {
 		}
 	}
 
+	// 初始值 populated -> false
 	if !f.populated {
 		f.populated = true
 		f.initialPopulationCount = keys.Len() + queuedDeletions

@@ -309,31 +309,31 @@ func (c *PluginConfig) encodeNestedObjects(e runtime.Encoder) error {
 // it is assumed that the extender chose not to provide that extension.
 type Extender struct {
 	// URLPrefix at which the extender is available
-	URLPrefix string `json:"urlPrefix"`
+	URLPrefix string `json:"urlPrefix"` // extender 访问地址
 	// Verb for the filter call, empty if not supported. This verb is appended to the URLPrefix when issuing the filter call to extender.
-	FilterVerb string `json:"filterVerb,omitempty"`
+	FilterVerb string `json:"filterVerb,omitempty"` // extender预选接口，scheduler在默认预选策略完成后会调用该接口完成自定义预选算法
 	// Verb for the preempt call, empty if not supported. This verb is appended to the URLPrefix when issuing the preempt call to extender.
 	PreemptVerb string `json:"preemptVerb,omitempty"`
 	// Verb for the prioritize call, empty if not supported. This verb is appended to the URLPrefix when issuing the prioritize call to extender.
-	PrioritizeVerb string `json:"prioritizeVerb,omitempty"`
+	PrioritizeVerb string `json:"prioritizeVerb,omitempty"` // extender优选接口，scheduler在默认优选策略完成后会调用该接口完成自定义优选算法
 	// The numeric multiplier for the node scores that the prioritize call generates.
 	// The weight should be a positive integer
-	Weight int64 `json:"weight,omitempty"`
+	Weight int64 `json:"weight,omitempty"` // 表示extender优选算法<PrioritizeVerb>对应的权重，scheduler会根据该权重对节点进行排序
 	// Verb for the bind call, empty if not supported. This verb is appended to the URLPrefix when issuing the bind call to extender.
 	// If this method is implemented by the extender, it is the extender's responsibility to bind the pod to apiserver. Only one extender
 	// can implement this function.
-	BindVerb string `json:"bindVerb,omitempty"`
+	BindVerb string `json:"bindVerb,omitempty"` // extender绑定接口，scheduler在完成预选和优选后会调用该接口完成绑定
 	// EnableHTTPS specifies whether https should be used to communicate with the extender
-	EnableHTTPS bool `json:"enableHTTPS,omitempty"`
+	EnableHTTPS bool `json:"enableHTTPS,omitempty"` // 是否开启https
 	// TLSConfig specifies the transport layer security config
 	TLSConfig *ExtenderTLSConfig `json:"tlsConfig,omitempty"`
 	// HTTPTimeout specifies the timeout duration for a call to the extender. Filter timeout fails the scheduling of the pod. Prioritize
 	// timeout is ignored, k8s/other extenders priorities are used to select the node.
-	HTTPTimeout metav1.Duration `json:"httpTimeout,omitempty"`
+	HTTPTimeout metav1.Duration `json:"httpTimeout,omitempty"` // 调用extender接口的超时时间
 	// NodeCacheCapable specifies that the extender is capable of caching node information,
 	// so the scheduler should only send minimal information about the eligible nodes
 	// assuming that the extender already cached full details of all nodes in the cluster
-	NodeCacheCapable bool `json:"nodeCacheCapable,omitempty"`
+	NodeCacheCapable bool `json:"nodeCacheCapable,omitempty"` // 是否开启节点缓存
 	// ManagedResources is a list of extended resources that are managed by
 	// this extender.
 	// - A pod will be sent to the extender on the Filter, Prioritize and Bind
@@ -347,7 +347,7 @@ type Extender struct {
 	ManagedResources []ExtenderManagedResource `json:"managedResources,omitempty"`
 	// Ignorable specifies if the extender is ignorable, i.e. scheduling should not
 	// fail when the extender returns an error or is not reachable.
-	Ignorable bool `json:"ignorable,omitempty"`
+	Ignorable bool `json:"ignorable,omitempty"` // 是否可忽略 extender 调用失败 以及 extender 不可达的情况 默认为false 不可忽略
 }
 
 // ExtenderManagedResource describes the arguments of extended resources

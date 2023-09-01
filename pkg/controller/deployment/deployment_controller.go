@@ -175,7 +175,7 @@ func (dc *DeploymentController) Run(ctx context.Context, workers int) {
 	klog.InfoS("Starting controller", "controller", "deployment")
 	defer klog.InfoS("Shutting down controller", "controller", "deployment")
 
-	// 等价于 WaitForCacheSync 等待 informer 同步完成 (-> DeltaFIFO))
+	// 等待 informer 同步完成 (-> DeltaFIFO))
 	if !cache.WaitForNamedCacheSync("deployment", ctx.Done(), dc.dListerSynced, dc.rsListerSynced, dc.podListerSynced) {
 		return
 	}

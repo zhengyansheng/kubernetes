@@ -332,6 +332,7 @@ func WaitForNamedCacheSync(controllerName string, stopCh <-chan struct{}, cacheS
 func WaitForCacheSync(stopCh <-chan struct{}, cacheSyncs ...InformerSynced) bool {
 	err := wait.PollImmediateUntil(syncedPollPeriod,
 		func() (bool, error) {
+			// cacheSyncs (pod,deployment) DeltaFIFO中队列是否消费完毕
 			for _, syncFunc := range cacheSyncs {
 				if !syncFunc() {
 					return false, nil
@@ -345,6 +346,7 @@ func WaitForCacheSync(stopCh <-chan struct{}, cacheSyncs ...InformerSynced) bool
 		return false
 	}
 
+	// caches 同步完成
 	klog.V(4).Infof("caches populated")
 	return true
 }

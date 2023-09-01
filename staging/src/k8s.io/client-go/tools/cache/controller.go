@@ -489,7 +489,7 @@ func NewTransformingIndexerInformer(
 // Multiplexes updates in the form of a list of Deltas into a Store, and informs
 // a given handler of events OnUpdate, OnAdd, OnDelete
 func processDeltas(
-// Object which receives event notifications from the given deltas
+	// Object which receives event notifications from the given deltas
 	handler ResourceEventHandler,
 	clientState Store,
 	transformer TransformFunc,
@@ -575,3 +575,9 @@ func newInformer(
 	}
 	return New(cfg)
 }
+
+/*
+	NewInformer														-> ListAndWatch [-> DeltaFIFO]
+						-> newInformer -> New(cfg)[Controller]
+	NewIndexerInformer												-> Pop [<- DeltaFIFO] [-> Indexer]
+*/
