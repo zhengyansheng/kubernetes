@@ -49,12 +49,17 @@ type Store interface {
 	// AddReference adds a reference to the object to the store.
 	// Note that multiple additions to the store has to be allowed
 	// in the implementations and effectively treated as refcounted.
+	// 添加对对象的引用到存储中。 请注意，多次添加到存储中的实现必须被允许，并且有效地被视为引用计数。
 	AddReference(namespace, name string)
 	// DeleteReference deletes reference to the object from the store.
 	// Note that object should be deleted only when there was a
 	// corresponding Delete call for each of Add calls (effectively
 	// when refcount was reduced to zero).
+
+	// DeleteReference 从存储中删除对对象的引用。 请注意，只有当每个Add调用都有相应的Delete调用时（当refcount减为零时），才应该删除对象。
 	DeleteReference(namespace, name string)
+
 	// Get an object from a store.
+	// 从存储中获取一个对象。
 	Get(namespace, name string) (runtime.Object, error)
 }

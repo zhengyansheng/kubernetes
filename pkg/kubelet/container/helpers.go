@@ -282,6 +282,7 @@ func SandboxToContainerState(state runtimeapi.PodSandboxState) State {
 }
 
 // GetContainerSpec gets the container spec by containerName.
+// GetContainerSpec 通过容器名称得到容器的 pod.spec.containers
 func GetContainerSpec(pod *v1.Pod, containerName string) *v1.Container {
 	var containerSpec *v1.Container
 	podutil.VisitContainers(&pod.Spec, podutil.AllFeatureEnabledContainers(), func(c *v1.Container, containerType podutil.ContainerType) bool {

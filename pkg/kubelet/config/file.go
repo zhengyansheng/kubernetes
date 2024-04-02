@@ -60,8 +60,10 @@ type sourceFile struct {
 }
 
 // NewSourceFile watches a config file for changes.
+// 监听配置文件的变化
 func NewSourceFile(path string, nodeName types.NodeName, period time.Duration, updates chan<- interface{}) {
 	// "github.com/sigma/go-inotify" requires a path without trailing "/"
+	// 依赖的包要求路径不能以"/"结尾
 	path = strings.TrimRight(path, string(os.PathSeparator))
 
 	config := newSourceFile(path, nodeName, period, updates)
@@ -94,6 +96,7 @@ func (s *sourceFile) run() {
 
 	go func() {
 		// Read path immediately to speed up startup.
+		// 读取路径以加快启动速度
 		if err := s.listConfig(); err != nil {
 			klog.ErrorS(err, "Unable to read config path", "path", s.path)
 		}
@@ -104,6 +107,7 @@ func (s *sourceFile) run() {
 					klog.ErrorS(err, "Unable to read config path", "path", s.path)
 				}
 			case e := <-s.watchEvents:
+				// consumeWatchEvent will handle errors
 				if err := s.consumeWatchEvent(e); err != nil {
 					klog.ErrorS(err, "Unable to process watch event")
 				}
@@ -126,12 +130,13 @@ func (s *sourceFile) listConfig() error {
 			return err
 		}
 		// Emit an update with an empty PodList to allow FileSource to be marked as seen
+		// 发出一个带有空PodList的更新，以便将FileSource标记为已查看
 		s.updates <- kubetypes.PodUpdate{Pods: []*v1.Pod{}, Op: kubetypes.SET, Source: kubetypes.FileSource}
-		return fmt.Errorf("path does not exist, ignoring")
+		return fmt.Errorf("path does not exist, ignoring") // path不存在，忽略
 	}
 
 	switch {
-	case statInfo.Mode().IsDir():
+	case statInfo.Mode().IsDir(): // path is a directory
 		pods, err := s.extractFromDir(path)
 		if err != nil {
 			return err
@@ -143,7 +148,8 @@ func (s *sourceFile) listConfig() error {
 		}
 		return s.replaceStore(pods...)
 
-	case statInfo.Mode().IsRegular():
+		// IsRegular 是判断文件是否是普通文件
+	case statInfo.Mode().IsRegular(): // path is a file
 		pod, err := s.extractFromFile(path)
 		if err != nil {
 			return err
@@ -151,7 +157,7 @@ func (s *sourceFile) listConfig() error {
 		return s.replaceStore(pod)
 
 	default:
-		return fmt.Errorf("path is not a directory or file")
+		return fmt.Errorf("path is not a directory or file") // 路径不是目录或文件
 	}
 }
 
@@ -197,6 +203,7 @@ func (s *sourceFile) extractFromDir(name string) ([]*v1.Pod, error) {
 }
 
 // extractFromFile parses a file for Pod configuration information.
+// 从文件中解析Pod配置信息
 func (s *sourceFile) extractFromFile(filename string) (pod *v1.Pod, err error) {
 	klog.V(3).InfoS("Reading config file", "path", filename)
 	defer func() {

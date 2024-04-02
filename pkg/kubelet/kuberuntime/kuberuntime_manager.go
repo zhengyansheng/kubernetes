@@ -68,6 +68,7 @@ const (
 	// The root directory for pod logs
 	podLogsRootDirectory = "/var/log/pods"
 	// A minimal shutdown window for avoiding unnecessary SIGKILLs
+	// 一个最小的关闭窗口，以避免不必要的SIGKILL
 	minimumGracePeriodInSeconds = 2
 
 	// The expiration time of version cache.
@@ -134,6 +135,7 @@ type kubeGenericRuntimeManager struct {
 	seccompProfileRoot string
 
 	// Internal lifecycle event handlers for container resource management.
+	// 用于容器资源管理的内部生命周期事件处理程序。
 	internalLifecycle cm.InternalContainerLifecycle
 
 	// Manage container logs.

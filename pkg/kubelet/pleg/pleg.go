@@ -38,6 +38,7 @@ const (
 	// ContainerStarted - event type when the new state of container is running.
 	ContainerStarted PodLifeCycleEventType = "ContainerStarted"
 	// ContainerDied - event type when the new state of container is exited.
+	// 事件类型，当容器的新状态是退出时
 	ContainerDied PodLifeCycleEventType = "ContainerDied"
 	// ContainerRemoved - event type when the old state of container is exited.
 	ContainerRemoved PodLifeCycleEventType = "ContainerRemoved"
@@ -49,6 +50,7 @@ const (
 )
 
 // PodLifecycleEvent is an event that reflects the change of the pod state.
+// 是一个反映pod状态变化的事件
 type PodLifecycleEvent struct {
 	// The pod ID.
 	ID types.UID

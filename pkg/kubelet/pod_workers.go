@@ -59,6 +59,7 @@ type KillPodOptions struct {
 	// The provided status is populated from the latest state.
 	PodStatusFunc PodStatusFunc
 	// PodTerminationGracePeriodSecondsOverride is optional override to use if a pod is being killed as part of kill operation.
+	// PodTerminationGracePeriodSecondsOverride 是可选的覆盖，如果一个pod正在被杀死作为杀死操作的一部分，则使用它。
 	PodTerminationGracePeriodSecondsOverride *int64
 }
 
@@ -257,6 +258,8 @@ type podSyncStatus struct {
 	// terminatingAt is set once the pod is requested to be killed - note that
 	// this can be set before the pod worker starts terminating the pod, see
 	// terminating.
+	// terminatingAt是在请求杀死吊舱后设置的-请注意
+	// 这可以在pod工作程序开始终止pod之前进行设置，请参阅终止。
 	terminatingAt time.Time
 	// startedTerminating is true once the pod worker has observed the request to
 	// stop a pod (exited syncPod and observed a podWork with WorkType
@@ -267,6 +270,7 @@ type podSyncStatus struct {
 	// or has no configuration represented (was deleted before).
 	deleted bool
 	// gracePeriod is the requested gracePeriod once terminatingAt is nonzero.
+	// gracePeriod是在terminatingAt为非零时请求的gracePeriod
 	gracePeriod int64
 	// evicted is true if the kill indicated this was an eviction (an evicted
 	// pod can be more aggressively cleaned up).
@@ -387,6 +391,9 @@ type podWorkers struct {
 	podsSynced bool
 	// Tracks all running per-pod goroutines - per-pod goroutine will be
 	// processing updates received through its corresponding channel.
+	/*
+		跟踪所有按pod运行的goroutine-每个pod goroutine将是处理通过其相应信道接收的更新。
+	*/
 	podUpdates map[types.UID]chan podWork
 	// Tracks the last undelivered work item for this pod - a work item is
 	// undelivered if it comes in while the worker is working.
@@ -510,8 +517,11 @@ func (p *podWorkers) ShouldPodRuntimeBeRemoved(uid types.UID) bool {
 }
 
 func (p *podWorkers) ShouldPodContentBeRemoved(uid types.UID) bool {
+	// 枷锁
 	p.podLock.Lock()
 	defer p.podLock.Unlock()
+
+	// 通过UID获取podSyncStatus
 	if status, ok := p.podSyncStatuses[uid]; ok {
 		return status.IsEvicted() || (status.IsDeleted() && status.IsTerminated())
 	}
@@ -582,7 +592,7 @@ func (p *podWorkers) UpdatePod(options UpdatePodOptions) {
 			klog.InfoS("Pod update included RunningPod which is only valid when Pod is not specified", "pod", klog.KObj(options.Pod), "podUID", options.Pod.UID)
 		}
 	}
-	uid := pod.UID
+	uid := pod.UID // e8ead7bb-1f94-4882-924c-769b6471cf1e
 
 	// 加锁
 	p.podLock.Lock()
@@ -701,6 +711,9 @@ func (p *podWorkers) UpdatePod(options UpdatePodOptions) {
 			status.statusPostTerminating = append(status.statusPostTerminating, fn)
 		}
 
+		// 计算有效宽限期
+		// gracePeriod => TerminationGracePeriodSeconds
+		// gracePeriodShortened -> ok
 		gracePeriod, gracePeriodShortened := calculateEffectiveGracePeriod(status, pod, options.KillPodOptions)
 
 		wasGracePeriodShortened = gracePeriodShortened
@@ -728,22 +741,27 @@ func (p *podWorkers) UpdatePod(options UpdatePodOptions) {
 	}
 
 	// start the pod worker goroutine if it doesn't exist
+	// 如果不存在正在运行的pod worker，则启动它
 	podUpdates, exists := p.podUpdates[uid]
 	if !exists {
 		// We need to have a buffer here, because checkForUpdates() method that
 		// puts an update into channel is called from the same goroutine where
 		// the channel is consumed. However, it is guaranteed that in such case
 		// the channel is empty, so buffer of size 1 is enough.
+		// 我们需要在这里有一个缓冲区，因为在同一goroutine中调用putUpdateInChannel()方法将更新放入通道，
+		// 该通道是在消耗通道的同一goroutine中调用的。但是，可以保证在这种情况下通道为空，因此大小为1的缓冲区足够了。
 		podUpdates = make(chan podWork, 1)
 		p.podUpdates[uid] = podUpdates
 
 		// ensure that static pods start in the order they are received by UpdatePod
+		// 确保静态Pod按接收顺序启动
 		if kubetypes.IsStaticPod(pod) {
 			p.waitingToStartStaticPodsByFullname[status.fullname] =
 				append(p.waitingToStartStaticPodsByFullname[status.fullname], uid)
 		}
 
 		// allow testing of delays in the pod update channel
+		// 允许测试在pod更新通道中的延迟
 		var outCh <-chan podWork
 		if p.workerChannelFn != nil {
 			outCh = p.workerChannelFn(uid, podUpdates)
@@ -755,6 +773,8 @@ func (p *podWorkers) UpdatePod(options UpdatePodOptions) {
 		// kubelet just restarted. In either case the kubelet is willing to believe
 		// the status of the pod for the first pod worker sync. See corresponding
 		// comment in syncPod.
+		// 创建新的pod worker意味着这是一个新的pod，或者kubelet刚刚重新启动。在任何一种情况下，kubelet都愿意相信
+		// 第一个pod worker同步的Pod状态。在syncPod中有相应的注释。
 		go func() {
 			defer runtime.HandleCrash()
 			// 核心逻辑
@@ -763,6 +783,7 @@ func (p *podWorkers) UpdatePod(options UpdatePodOptions) {
 	}
 
 	// dispatch a request to the pod worker if none are running
+	// 如果没有运行中的pod worker，则发送请求到pod worker
 	if !status.IsWorking() {
 		status.working = true
 		podUpdates <- work
@@ -947,6 +968,7 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan podWork) {
 			// Take the appropriate action (illegal phases are prevented by UpdatePod)
 			switch {
 			case update.WorkType == TerminatedPodWork:
+				// 同步终止的pod
 				err = p.syncTerminatedPodFn(ctx, pod, status)
 
 			case update.WorkType == TerminatingPodWork:
@@ -956,9 +978,11 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan podWork) {
 				}
 				podStatusFn := p.acknowledgeTerminating(pod)
 
+				// 同步终止中的pod
 				err = p.syncTerminatingPodFn(ctx, pod, status, update.Options.RunningPod, gracePeriod, podStatusFn)
 
 			default:
+				// 同步pod
 				isTerminal, err = p.syncPodFn(ctx, update.Options.UpdateType, pod, update.Options.MirrorPod, status)
 			}
 
@@ -967,6 +991,7 @@ func (p *podWorkers) managePodLoop(podUpdates <-chan podWork) {
 		}()
 
 		var phaseTransition bool
+
 		switch {
 		case err == context.Canceled:
 			// when the context is cancelled we expect an update to already be queued

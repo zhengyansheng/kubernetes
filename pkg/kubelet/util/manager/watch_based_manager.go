@@ -43,6 +43,7 @@ type newObjectFunc func() runtime.Object
 type isImmutableFunc func(runtime.Object) bool
 
 // objectCacheItem is a single item stored in objectCache.
+// objectCacheItem 是一个简单的缓存对象
 type objectCacheItem struct {
 	refCount  int
 	store     *cacheStore
@@ -165,7 +166,7 @@ type objectCache struct {
 	maxIdleTime   time.Duration
 
 	lock    sync.RWMutex
-	items   map[objectKey]*objectCacheItem
+	items   map[objectKey]*objectCacheItem // namespace:name -> objectCacheItem
 	stopped bool
 }
 
@@ -239,7 +240,9 @@ func (c *objectCache) newReflectorLocked(namespace, name string) *objectCacheIte
 	}
 
 	// Don't start reflector if Kubelet is already shutting down.
+	// 不要启动reflector，如果kubelet已经关闭
 	if !c.stopped {
+		// 启动reflector
 		go item.startReflector()
 	}
 	return item
@@ -255,6 +258,7 @@ func (c *objectCache) AddReference(namespace, name string) {
 	// reflector propagated the store.
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
 	item, exists := c.items[key]
 	if !exists {
 		item = c.newReflectorLocked(namespace, name)
@@ -266,12 +270,16 @@ func (c *objectCache) AddReference(namespace, name string) {
 func (c *objectCache) DeleteReference(namespace, name string) {
 	key := objectKey{namespace: namespace, name: name}
 
+	// 枷锁
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
+	// 从缓存中获取对象
 	if item, ok := c.items[key]; ok {
 		item.refCount--
 		if item.refCount == 0 {
 			// Stop the underlying reflector.
+			// 停止底层的reflector
 			item.stop()
 			delete(c.items, key)
 		}

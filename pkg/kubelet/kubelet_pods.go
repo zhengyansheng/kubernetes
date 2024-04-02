@@ -856,6 +856,7 @@ func containerResourceRuntimeValue(fs *v1.ResourceFieldSelector, pod *v1.Pod, co
 // killPod instructs the container runtime to kill the pod. This method requires that
 // the pod status contains the result of the last syncPod, otherwise it may fail to
 // terminate newly created containers and sandboxes.
+// killPod 指示容器运行时终止 Pod。该方法要求 Pod 状态包含上次同步 Pod 的结果，否则可能无法终止新创建的容器和沙箱。
 func (kl *Kubelet) killPod(ctx context.Context, pod *v1.Pod, p kubecontainer.Pod, gracePeriodOverride *int64) error {
 	// Call the container runtime KillPod method which stops all known running containers of the pod
 	// 调用容器运行时KillPod方法，该方法停止pod的所有已知运行容器

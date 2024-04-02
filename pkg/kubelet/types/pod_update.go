@@ -38,10 +38,13 @@ type PodOperation int
 // These constants identify the PodOperations that can be made on a pod configuration.
 const (
 	// SET is the current pod configuration.
+	// SET是当前的Pod配置
 	SET PodOperation = iota
 	// ADD signifies pods that are new to this source.
+	// ADD表示此源中的新Pod
 	ADD
 	// DELETE signifies pods that are gracefully deleted from this source.
+	// DELETE表示从此源中优雅地删除的Pod
 	DELETE
 	// REMOVE signifies pods that have been removed from this source.
 	REMOVE
@@ -78,7 +81,7 @@ const NamespaceDefault = metav1.NamespaceDefault
 // are generated.
 type PodUpdate struct {
 	Pods   []*v1.Pod
-	Op     PodOperation
+	Op     PodOperation // SET, ADD, DELETE, REMOVE, UPDATE, RECONCILE
 	Source string
 }
 
@@ -101,6 +104,7 @@ func GetValidatedSources(sources []string) ([]string, error) {
 }
 
 // GetPodSource returns the source of the pod based on the annotation.
+// 返回Pod的源，基于注释
 func GetPodSource(pod *v1.Pod) (string, error) {
 	if pod.Annotations != nil {
 		if source, ok := pod.Annotations[ConfigSourceAnnotationKey]; ok {
@@ -111,17 +115,22 @@ func GetPodSource(pod *v1.Pod) (string, error) {
 }
 
 // SyncPodType classifies pod updates, eg: create, update.
+// 同步Pod类型 用于分类Pod更新，例如：创建、更新
 type SyncPodType int
 
 const (
 	// SyncPodSync is when the pod is synced to ensure desired state
+	// 同步Pod是当Pod同步以确保期望的状态
 	SyncPodSync SyncPodType = iota
 	// SyncPodUpdate is when the pod is updated from source
+	// SyncPodUpdate是当Pod从源更新
 	SyncPodUpdate
 	// SyncPodCreate is when the pod is created from source
+	// SyncPodCreate是当Pod从源创建
 	SyncPodCreate
 	// SyncPodKill is when the pod should have no running containers. A pod stopped in this way could be
 	// restarted in the future due config changes.
+	// SyncPodKill是当Pod不应该有运行的容器。以这种方式停止的Pod可能会因配置更改而在将来重新启动。
 	SyncPodKill
 )
 
@@ -150,9 +159,10 @@ func IsMirrorPod(pod *v1.Pod) bool {
 }
 
 // IsStaticPod returns true if the pod is a static pod.
+// 返回true，如果Pod是静态Pod
 func IsStaticPod(pod *v1.Pod) bool {
 	source, err := GetPodSource(pod)
-	return err == nil && source != ApiserverSource
+	return err == nil && source != ApiserverSource // return true && true
 }
 
 // IsCriticalPod returns true if pod's priority is greater than or equal to SystemCriticalPriority.

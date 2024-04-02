@@ -34,11 +34,13 @@ import (
 const WaitForAPIServerSyncPeriod = 1 * time.Second
 
 // NewSourceApiserver creates a config source that watches and pulls from the apiserver.
+// 创建一个从apiserver中获取配置的config source
 func NewSourceApiserver(c clientset.Interface, nodeName types.NodeName, nodeHasSynced func() bool, updates chan<- interface{}) {
 	lw := cache.NewListWatchFromClient(c.CoreV1().RESTClient(), "pods", metav1.NamespaceAll, fields.OneTermEqualSelector("spec.nodeName", string(nodeName)))
 
 	// The Reflector responsible for watching pods at the apiserver should be run only after
 	// the node sync with the apiserver has completed.
+	// 反射器负责监视apiserver上的pod，应该在节点与apiserver的同步完成后才运行
 	klog.InfoS("Waiting for node sync before watching apiserver pods")
 	go func() {
 		for {
@@ -46,7 +48,7 @@ func NewSourceApiserver(c clientset.Interface, nodeName types.NodeName, nodeHasS
 				klog.V(4).InfoS("node sync completed")
 				break
 			}
-			time.Sleep(WaitForAPIServerSyncPeriod)
+			time.Sleep(WaitForAPIServerSyncPeriod) // 2s
 			klog.V(4).InfoS("node sync has not completed yet")
 		}
 		klog.InfoS("Watching apiserver")
@@ -55,6 +57,7 @@ func NewSourceApiserver(c clientset.Interface, nodeName types.NodeName, nodeHasS
 }
 
 // newSourceApiserverFromLW holds creates a config source that watches and pulls from the apiserver.
+// 创建一个从apiserver中获取配置的config source
 func newSourceApiserverFromLW(lw cache.ListerWatcher, updates chan<- interface{}) {
 	send := func(objs []interface{}) {
 		var pods []*v1.Pod

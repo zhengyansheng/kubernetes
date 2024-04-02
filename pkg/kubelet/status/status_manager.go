@@ -121,8 +121,8 @@ type Manager interface {
 	// triggers a status update.
 	SetContainerStartup(podUID types.UID, containerID kubecontainer.ContainerID, started bool)
 
-	// TerminatePod resets the container status for the provided pod to terminated and triggers
-	// a status update.
+	// TerminatePod resets the container status for the provided pod to terminated and triggers a status update.
+	// 终止Pod将提供的Pod的容器状态重置为终止状态，并触发状态更新。
 	TerminatePod(pod *v1.Pod)
 
 	// RemoveOrphanedStatuses scans the status cache and removes any entries for pods not included in

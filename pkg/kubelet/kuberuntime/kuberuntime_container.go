@@ -584,6 +584,7 @@ func toKubeContainerStatus(status *runtimeapi.ContainerStatus, runtimeName strin
 }
 
 // executePreStopHook runs the pre-stop lifecycle hooks if applicable and returns the duration it takes.
+// executePreStopHook 运行 pre-stop 生命周期钩子（如果适用）并返回它所花费的时间。
 func (m *kubeGenericRuntimeManager) executePreStopHook(ctx context.Context, pod *v1.Pod, containerID kubecontainer.ContainerID, containerSpec *v1.Container, gracePeriod int64) int64 {
 	// 记录日志
 	klog.V(3).InfoS("Running preStop hook", "pod", klog.KObj(pod), "podUID", pod.UID, "containerName", containerSpec.Name, "containerID", containerID.String())
@@ -671,15 +672,24 @@ func (m *kubeGenericRuntimeManager) restoreSpecsFromContainerLabels(ctx context.
 // killContainer kills a container through the following steps:
 // * Run the pre-stop lifecycle hooks (if applicable).
 // * Stop the container.
+// killContainer 通过以下步骤杀死一个容器：
+// * 运行 pre-stop 生命周期钩子。
+// * 停止容器。
 func (m *kubeGenericRuntimeManager) killContainer(ctx context.Context, pod *v1.Pod, containerID kubecontainer.ContainerID, containerName string, message string, reason containerKillReason, gracePeriodOverride *int64) error {
+	/*
+		reason = unkonwn
+		message = ""
+		gracePeriodOverride 为空
+	*/
 	var containerSpec *v1.Container
-	if pod != nil {
+	if pod != nil { // 如果 pod 为 nil，则从容器标签中恢复必要的信息
 		if containerSpec = kubecontainer.GetContainerSpec(pod, containerName); containerSpec == nil {
 			return fmt.Errorf("failed to get containerSpec %q (id=%q) in pod %q when killing container for reason %q",
 				containerName, containerID.String(), format.Pod(pod), message)
 		}
 	} else {
 		// Restore necessary information if one of the specs is nil.
+		// 如果其中一个规格为 nil，则恢复必要的信息。
 		restoredPod, restoredContainer, err := m.restoreSpecsFromContainerLabels(ctx, containerID)
 		if err != nil {
 			return err
@@ -688,40 +698,48 @@ func (m *kubeGenericRuntimeManager) killContainer(ctx context.Context, pod *v1.P
 	}
 
 	// From this point, pod and container must be non-nil.
+	// 返回容器的终止优雅期限，这个值gracePeriod默认为pod.Spec.TerminationGracePeriodSeconds
 	gracePeriod := setTerminationGracePeriod(pod, containerSpec, containerName, containerID, reason)
 
 	if len(message) == 0 {
+		// 正在停止容器
 		message = fmt.Sprintf("Stopping container %s", containerSpec.Name)
 	}
 	// 记录事件
 	m.recordContainerEvent(pod, containerSpec, containerID.ID, v1.EventTypeNormal, events.KillingContainer, message)
 
 	// Run internal pre-stop lifecycle hook
+	// 未实现真正的逻辑
 	if err := m.internalLifecycle.PreStopContainer(containerID.ID); err != nil {
 		return err
 	}
 
 	// Run the pre-stop lifecycle hooks if applicable and if there is enough time to run it
+	// 如果配置了 preStop 生命周期钩子，并且优雅期限大于 0，则执行 preStop 生命周期钩子
 	if containerSpec.Lifecycle != nil && containerSpec.Lifecycle.PreStop != nil && gracePeriod > 0 {
 		// 执行 preStop hook
 		gracePeriod = gracePeriod - m.executePreStopHook(ctx, pod, containerID, containerSpec, gracePeriod)
 	}
 	// always give containers a minimal shutdown window to avoid unnecessary SIGKILLs
+	// 始终给容器一个最小的关闭窗口，以避免不必要的 SIGKILL
 	if gracePeriod < minimumGracePeriodInSeconds { // 2s
 		gracePeriod = minimumGracePeriodInSeconds
 	}
 	if gracePeriodOverride != nil {
 		gracePeriod = *gracePeriodOverride
+		// 使用优雅期限覆盖终止容器
 		klog.V(3).InfoS("Killing container with a grace period override", "pod", klog.KObj(pod), "podUID", pod.UID,
 			"containerName", containerName, "containerID", containerID.String(), "gracePeriod", gracePeriod)
 	}
 
+	// 使用优雅期限终止容器
 	klog.V(2).InfoS("Killing container with a grace period", "pod", klog.KObj(pod), "podUID", pod.UID,
 		"containerName", containerName, "containerID", containerID.String(), "gracePeriod", gracePeriod)
 
 	// 停止容器
 	err := m.runtimeService.StopContainer(ctx, containerID.ID, gracePeriod)
 	if err != nil && !crierror.IsNotFound(err) {
+		// 容器终止失败，使用优雅期限
 		klog.ErrorS(err, "Container termination failed with gracePeriod", "pod", klog.KObj(pod), "podUID", pod.UID,
 			"containerName", containerName, "containerID", containerID.String(), "gracePeriod", gracePeriod)
 		return err
@@ -744,7 +762,7 @@ func (m *kubeGenericRuntimeManager) killContainersWithSyncResult(ctx context.Con
 			defer wg.Done()
 
 			killContainerResult := kubecontainer.NewSyncResult(kubecontainer.KillContainer, container.Name)
-			// 杀死容器 "Unknown"
+			// reason = "Unknown"
 			if err := m.killContainer(ctx, pod, container.ID, container.Name, "", reasonUnknown, gracePeriodOverride); err != nil {
 				killContainerResult.Fail(kubecontainer.ErrKillContainer, err.Error())
 				// Use runningPod for logging as the pod passed in could be *nil*.
@@ -995,20 +1013,23 @@ func (m *kubeGenericRuntimeManager) DeleteContainer(ctx context.Context, contain
 }
 
 // setTerminationGracePeriod determines the grace period to use when killing a container
+// setTerminationGracePeriod 确定在终止容器时使用的宽限期
 func setTerminationGracePeriod(pod *v1.Pod, containerSpec *v1.Container, containerName string, containerID kubecontainer.ContainerID, reason containerKillReason) int64 {
-	// reason -> "Unknown"
-	gracePeriod := int64(minimumGracePeriodInSeconds) // 2
+	gracePeriod := int64(minimumGracePeriodInSeconds) // minimumGracePeriodInSeconds = 2
 	switch {
 	case pod.DeletionGracePeriodSeconds != nil:
+		// 当执行删除操作时，资源的metadata属性上 deletionGracePeriodSeconds 这个值会等于pod.spec.terminationGracePeriodSeconds
 		return *pod.DeletionGracePeriodSeconds
 		// 默认是30s
 	case pod.Spec.TerminationGracePeriodSeconds != nil:
 		switch reason {
 		case reasonStartupProbe:
+			// isProbeTerminationGracePeriodSecondsSet 默认情况下就是false
 			if isProbeTerminationGracePeriodSecondsSet(pod, containerSpec, containerSpec.StartupProbe, containerName, containerID, "StartupProbe") {
 				return *containerSpec.StartupProbe.TerminationGracePeriodSeconds
 			}
 		case reasonLivenessProbe:
+			// isProbeTerminationGracePeriodSecondsSet 默认情况下就是false
 			if isProbeTerminationGracePeriodSecondsSet(pod, containerSpec, containerSpec.LivenessProbe, containerName, containerID, "LivenessProbe") {
 				return *containerSpec.LivenessProbe.TerminationGracePeriodSeconds
 			}
@@ -1021,10 +1042,13 @@ func setTerminationGracePeriod(pod *v1.Pod, containerSpec *v1.Container, contain
 
 func isProbeTerminationGracePeriodSecondsSet(pod *v1.Pod, containerSpec *v1.Container, probe *v1.Probe, containerName string, containerID kubecontainer.ContainerID, probeType string) bool {
 	if probe != nil && probe.TerminationGracePeriodSeconds != nil {
+		// probe.TerminationGracePeriodSeconds 默认值是1s
+		// pod.Spec.TerminationGracePeriodSeconds 默认值是30s
 		if *probe.TerminationGracePeriodSeconds > *pod.Spec.TerminationGracePeriodSeconds {
 			klog.V(4).InfoS("Using probe-level grace period that is greater than the pod-level grace period", "pod", klog.KObj(pod), "pod-uid", pod.UID, "containerName", containerName, "containerID", containerID.String(), "probe-type", probeType, "probe-grace-period", *probe.TerminationGracePeriodSeconds, "pod-grace-period", *pod.Spec.TerminationGracePeriodSeconds)
 		}
 		return true
 	}
+	// 默认值是false
 	return false
 }

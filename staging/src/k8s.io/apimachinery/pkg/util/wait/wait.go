@@ -40,6 +40,7 @@ import (
 var ForeverTestTimeout = time.Second * 30
 
 // NeverStop may be passed to Until to make it never stop.
+// NeverStop 可以传递给Until，使其永远不会停止
 var NeverStop <-chan struct{} = make(chan struct{})
 
 // Group allows to start a group of goroutines and wait for their completion.
@@ -88,6 +89,8 @@ func Forever(f func(), period time.Duration) {
 // Until is syntactic sugar on top of JitterUntil with zero jitter factor and
 // with sliding = true (which means the timer for period starts after the f
 // completes).
+// 一直循环直到 stop channel 被关闭，每隔 period 执行 f
+// 如果period是0 ，则f将立即运行，然后再次等待直到stopCh关闭
 func Until(f func(), period time.Duration, stopCh <-chan struct{}) {
 	JitterUntil(f, period, 0.0, true, stopCh)
 }

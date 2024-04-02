@@ -222,8 +222,10 @@ func (c *cacheBasedManager) GetObject(namespace, name string) (runtime.Object, e
 
 func (c *cacheBasedManager) RegisterPod(pod *v1.Pod) {
 	names := c.getReferencedObjects(pod)
+	// 加锁
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
 	for name := range names {
 		c.objectStore.AddReference(pod.Namespace, name)
 	}
@@ -243,13 +245,18 @@ func (c *cacheBasedManager) RegisterPod(pod *v1.Pod) {
 	}
 }
 
+// UnregisterPod 注销Pod
 func (c *cacheBasedManager) UnregisterPod(pod *v1.Pod) {
 	var prev *v1.Pod
+
 	key := objectKey{namespace: pod.Namespace, name: pod.Name, uid: pod.UID}
+	// 加锁
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
 	prev = c.registeredPods[key]
 	delete(c.registeredPods, key)
+
 	if prev != nil {
 		for name := range c.getReferencedObjects(prev) {
 			c.objectStore.DeleteReference(prev.Namespace, name)
