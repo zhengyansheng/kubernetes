@@ -248,11 +248,17 @@ func buildHandlerChain(handler http.Handler, authn authenticator.Request, authz 
 	requestInfoResolver := &apirequest.RequestInfoFactory{}
 	failedHandler := genericapifilters.Unauthorized(scheme.Codecs)
 
+	// 授权
 	handler = genericapifilters.WithAuthorization(handler, authz, scheme.Codecs)
+	// 认证
 	handler = genericapifilters.WithAuthentication(handler, authn, failedHandler, nil)
+	// 请求信息
 	handler = genericapifilters.WithRequestInfo(handler, requestInfoResolver)
+	// 缓存控制
 	handler = genericapifilters.WithCacheControl(handler)
+	// 日志
 	handler = genericfilters.WithHTTPLogging(handler)
+	// 恢复
 	handler = genericfilters.WithPanicRecovery(handler, requestInfoResolver)
 
 	return handler
