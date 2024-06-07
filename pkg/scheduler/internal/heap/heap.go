@@ -175,6 +175,7 @@ func (h *Heap) Delete(obj interface{}) error {
 }
 
 // Peek returns the head of the heap without removing it.
+// Peek 返回堆的头部而不移除它
 func (h *Heap) Peek() interface{} {
 	return h.data.Peek()
 }

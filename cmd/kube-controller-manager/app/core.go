@@ -89,6 +89,7 @@ func startServiceController(ctx context.Context, controllerContext ControllerCon
 	)
 	if err != nil {
 		// This error shouldn't fail. It lives like this as a legacy.
+		// 这个错误不应该失败。它以这种方式存在是因为它是一个遗留问题。
 		klog.Errorf("Failed to start service controller: %v", err)
 		return nil, false, nil
 	}

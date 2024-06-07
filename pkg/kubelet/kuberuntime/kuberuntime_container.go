@@ -670,11 +670,10 @@ func (m *kubeGenericRuntimeManager) restoreSpecsFromContainerLabels(ctx context.
 }
 
 // killContainer kills a container through the following steps:
-// * Run the pre-stop lifecycle hooks (if applicable).
-// * Stop the container.
+// * Run the pre-stop lifecycle hooks (if applicable). Stop the container.
+
 // killContainer 通过以下步骤杀死一个容器：
-// * 运行 pre-stop 生命周期钩子。
-// * 停止容器。
+// 运行 pre-stop， stop container。
 func (m *kubeGenericRuntimeManager) killContainer(ctx context.Context, pod *v1.Pod, containerID kubecontainer.ContainerID, containerName string, message string, reason containerKillReason, gracePeriodOverride *int64) error {
 	/*
 		reason = unkonwn

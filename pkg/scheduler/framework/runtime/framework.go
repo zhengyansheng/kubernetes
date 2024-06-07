@@ -253,7 +253,7 @@ func WithClusterEventMap(m map[framework.ClusterEvent]sets.String) Option {
 var _ framework.Framework = &frameworkImpl{}
 
 // NewFramework initializes plugins given the configuration and the registry.
-// 初始化插件
+// NewFramework 初始化给定配置和注册表的插件。
 func NewFramework(r Registry, profile *config.KubeSchedulerProfile, stopCh <-chan struct{}, opts ...Option) (framework.Framework, error) {
 	options := defaultFrameworkOptions(stopCh)
 	for _, opt := range opts {
@@ -307,6 +307,7 @@ func NewFramework(r Registry, profile *config.KubeSchedulerProfile, stopCh <-cha
 	pluginsMap := make(map[string]framework.Plugin)
 	for name, factory := range r {
 		// initialize only needed plugins.
+		// 初始化所需的插件
 		if !pg.Has(name) {
 			continue
 		}
@@ -325,10 +326,12 @@ func NewFramework(r Registry, profile *config.KubeSchedulerProfile, stopCh <-cha
 		pluginsMap[name] = p
 
 		// Update ClusterEventMap in place.
+		// 更新 ClusterEventMap。
 		fillEventToPluginMap(p, options.clusterEventMap)
 	}
 
 	// initialize plugins per individual extension points
+	// 初始化每个单独的扩展点的插件
 	for _, e := range f.getExtensionPoints(profile.Plugins) {
 		if err := updatePluginList(e.slicePtr, *e.plugins, pluginsMap); err != nil {
 			return nil, err
@@ -336,6 +339,7 @@ func NewFramework(r Registry, profile *config.KubeSchedulerProfile, stopCh <-cha
 	}
 
 	// initialize multiPoint plugins to their expanded extension points
+	// 初始化多点插件到它们扩展的扩展点
 	if len(profile.Plugins.MultiPoint.Enabled) > 0 {
 		if err := f.expandMultiPointPlugins(profile, pluginsMap); err != nil {
 			return nil, err
@@ -371,12 +375,12 @@ func NewFramework(r Registry, profile *config.KubeSchedulerProfile, stopCh <-cha
 		}
 		options.captureProfile(outputProfile)
 	}
-
 	return f, nil
 }
 
 // getScoreWeights makes sure that, between MultiPoint-Score plugin weights and individual Score
 // plugin weights there is not an overflow of MaxTotalScore.
+// getScoreWeights 确保在 MultiPoint-Score 插件权重和单个 Score 插件权重之间没有 MaxTotalScore 的溢出为插件设置权重
 func getScoreWeights(f *frameworkImpl, pluginsMap map[string]framework.Plugin, plugins []config.Plugin) error {
 	var totalPriority int64
 	scorePlugins := reflect.ValueOf(&f.scorePlugins).Elem()
@@ -389,17 +393,20 @@ func getScoreWeights(f *frameworkImpl, pluginsMap map[string]framework.Plugin, p
 
 		// We append MultiPoint plugins to the list of Score plugins. So if this plugin has already been
 		// encountered, let the individual Score weight take precedence.
+		// 我门
 		if _, ok := f.scorePluginWeight[e.Name]; ok {
 			continue
 		}
 		// a weight of zero is not permitted, plugins can be disabled explicitly
 		// when configured.
+		// 一个权重为零是不允许的，插件可以在配置时被显式禁用。
 		f.scorePluginWeight[e.Name] = int(e.Weight)
 		if f.scorePluginWeight[e.Name] == 0 {
 			f.scorePluginWeight[e.Name] = 1
 		}
 
 		// Checks totalPriority against MaxTotalScore to avoid overflow
+		// 检查 totalPriority 是否超出 MaxTotalScore 以避免溢出
 		if int64(f.scorePluginWeight[e.Name])*framework.MaxNodeScore > framework.MaxTotalScore-totalPriority {
 			return fmt.Errorf("total score of Score plugins could overflow")
 		}
@@ -618,8 +625,9 @@ func (f *frameworkImpl) RunPreFilterPlugins(ctx context.Context, state *framewor
 	var result *framework.PreFilterResult
 	var pluginsWithNodes []string
 	skipPlugins := sets.New[string]()
+	klog.Info("------------------------->Running pre-filter plugins: %+v", f.preFilterPlugins)
 	for _, pl := range f.preFilterPlugins {
-		klog.V(3).Infof("pre filter plugin name: %v\n", pl.Name())
+		klog.V(3).Infof("---------------->pre filter plugin name: %v\n", pl.Name())
 		r, s := f.runPreFilterPlugin(ctx, pl, state, pod)
 		// 跳过插件
 		if s.IsSkip() {
@@ -744,8 +752,9 @@ func (f *frameworkImpl) RunFilterPlugins(
 	nodeInfo *framework.NodeInfo,
 ) *framework.Status {
 	// 同步执行所有的 filter plugin
+	var optPlugins []string
 	for _, pl := range f.filterPlugins {
-		klog.V(3).Infof("run filter plugin name: %v\n", pl.Name())
+		optPlugins = append(optPlugins, pl.Name())
 		if state.SkipFilterPlugins.Has(pl.Name()) {
 			continue
 		}
@@ -760,6 +769,10 @@ func (f *frameworkImpl) RunFilterPlugins(
 			status.SetFailedPlugin(pl.Name())
 			return status
 		}
+	}
+
+	for i, p := range optPlugins {
+		klog.Infof("run filter plugin %d name: %v", i, p)
 	}
 
 	return nil
@@ -939,11 +952,14 @@ func (f *frameworkImpl) runPreScorePlugin(ctx context.Context, pl framework.PreS
 // It returns a list that stores scores from each plugin and total score for each Node.
 // It also returns *Status, which is set to non-success if any of the plugins returns
 // a non-success status.
+// RunScorePlugins 运行配置的评分插件集。它返回一个列表，其中存储了每个插件的分数和每个节点的总分。
+// 它还返回 *Status，如果任何插件返回非成功状态，则将其设置为非成功。
 func (f *frameworkImpl) RunScorePlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) (ns []framework.NodePluginScores, status *framework.Status) {
 	startTime := time.Now()
 	defer func() {
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(score, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
+
 	allNodePluginScores := make([]framework.NodePluginScores, len(nodes))
 	// pluginToNodeScores: {"": [{"name": "node_name",  "score": "node_score"}, {}]}
 	// 这里的nodes是 runFilterPlugins 的返回的nodes
@@ -956,6 +972,7 @@ func (f *frameworkImpl) RunScorePlugins(ctx context.Context, state *framework.Cy
 	errCh := parallelize.NewErrorChannel()
 
 	// Run Score method for each node in parallel.
+	// 运行每个节点的 Score 方法
 	f.Parallelizer().Until(ctx, len(nodes), func(index int) {
 		for _, pl := range f.scorePlugins {
 			nodeName := nodes[index].Name
@@ -965,6 +982,7 @@ func (f *frameworkImpl) RunScorePlugins(ctx context.Context, state *framework.Cy
 				errCh.SendErrorWithCancel(err, cancel)
 				return
 			}
+			klog.Infof("nodeName: %v, plugin %v score: %v", nodeName, pl.Name(), s)
 			pluginToNodeScores[pl.Name()][index] = framework.NodeScore{
 				Name:  nodeName,
 				Score: s,
@@ -976,6 +994,7 @@ func (f *frameworkImpl) RunScorePlugins(ctx context.Context, state *framework.Cy
 	}
 
 	// Run NormalizeScore method for each ScorePlugin in parallel.
+	// 运行每个 ScorePlugin 的 NormalizeScore 方法
 	f.Parallelizer().Until(ctx, len(f.scorePlugins), func(index int) {
 		pl := f.scorePlugins[index]
 		if pl.ScoreExtensions() == nil {
@@ -995,6 +1014,7 @@ func (f *frameworkImpl) RunScorePlugins(ctx context.Context, state *framework.Cy
 
 	// Apply score weight for each ScorePlugin in parallel,
 	// and then, build allNodePluginScores.
+	// 并行应用每个 ScorePlugin 的分数权重，然后构建 allNodePluginScores。
 	f.Parallelizer().Until(ctx, len(nodes), func(index int) {
 		nodePluginScores := framework.NodePluginScores{
 			Name:   nodes[index].Name,
@@ -1032,7 +1052,9 @@ func (f *frameworkImpl) runScorePlugin(ctx context.Context, pl framework.ScorePl
 		return pl.Score(ctx, state, pod, nodeName)
 	}
 	startTime := time.Now()
+
 	s, status := pl.Score(ctx, state, pod, nodeName)
+	// metrics
 	f.metricsRecorder.observePluginDurationAsync(score, pl.Name(), status, metrics.SinceInSeconds(startTime))
 	return s, status
 }
@@ -1083,15 +1105,20 @@ func (f *frameworkImpl) runPreBindPlugin(ctx context.Context, pl framework.PreBi
 
 // RunBindPlugins runs the set of configured bind plugins until one returns a non `Skip` status.
 func (f *frameworkImpl) RunBindPlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (status *framework.Status) {
+
 	startTime := time.Now()
 	defer func() {
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(bind, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
+
 	// 如果没有配置绑定插件则直接退出
 	if len(f.bindPlugins) == 0 {
 		return framework.NewStatus(framework.Skip, "")
 	}
+
+	// 遍历所有的绑定插件
 	for _, pl := range f.bindPlugins {
+
 		// 执行绑定插件
 		status = f.runBindPlugin(ctx, pl, state, pod, nodeName)
 		if status.IsSkip() {
@@ -1107,6 +1134,7 @@ func (f *frameworkImpl) RunBindPlugins(ctx context.Context, state *framework.Cyc
 			klog.ErrorS(err, "Failed running Bind plugin", "plugin", pl.Name(), "pod", klog.KObj(pod), "node", nodeName)
 			return framework.AsStatus(fmt.Errorf("running Bind plugin %q: %w", pl.Name(), err))
 		}
+
 		// 如果绑定成功，直接结束
 		return status
 	}

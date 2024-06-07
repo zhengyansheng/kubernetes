@@ -27,6 +27,7 @@ import (
 )
 
 // NodePorts is a plugin that checks if a node has free ports for the requested pod ports.
+// NodePorts 是一个插件，用于检查节点是否有空闲端口以供请求的 pod 使用。
 type NodePorts struct{}
 
 var _ framework.PreFilterPlugin = &NodePorts{}
@@ -35,13 +36,17 @@ var _ framework.EnqueueExtensions = &NodePorts{}
 
 const (
 	// Name is the name of the plugin used in the plugin registry and configurations.
+	// Name 是插件在插件注册表和配置中使用的名称。
 	Name = names.NodePorts
 
 	// preFilterStateKey is the key in CycleState to NodePorts pre-computed data.
 	// Using the name of the plugin will likely help us avoid collisions with other plugins.
+	// preFilterStateKey 是 CycleState 中 NodePorts 预计算数据的键。
+	// 使用插件的名称可能有助于我们避免与其他插件发生冲突。
 	preFilterStateKey = "PreFilter" + Name
 
 	// ErrReason when node ports aren't available.
+	// 当节点端口不可用时的错误原因。
 	ErrReason = "node(s) didn't have free ports for the requested pod ports"
 )
 
@@ -50,6 +55,7 @@ type preFilterState []*v1.ContainerPort
 // Clone the prefilter state.
 func (s preFilterState) Clone() framework.StateData {
 	// The state is not impacted by adding/removing existing pods, hence we don't need to make a deep copy.
+	// 这个状态不受添加/删除现有 pod 的影响，因此我们不需要进行深度复制。
 	return s
 }
 
@@ -60,6 +66,7 @@ func (pl *NodePorts) Name() string {
 
 // getContainerPorts returns the used host ports of Pods: if 'port' was used, a 'port:true' pair
 // will be in the result; but it does not resolve port conflict.
+// getContainerPorts 返回 Pods 使用的主机端口：如果 'port' 被使用，结果中将有 'port:true' 对；但它不解决端口冲突。
 func getContainerPorts(pods ...*v1.Pod) []*v1.ContainerPort {
 	ports := []*v1.ContainerPort{}
 	for _, pod := range pods {
@@ -76,19 +83,23 @@ func getContainerPorts(pods ...*v1.Pod) []*v1.ContainerPort {
 // PreFilter invoked at the prefilter extension point.
 func (pl *NodePorts) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod) (*framework.PreFilterResult, *framework.Status) {
 	s := getContainerPorts(pod)
+	// 保存 pod 的端口信息
 	cycleState.Write(preFilterStateKey, preFilterState(s))
 	return nil, nil
 }
 
 // PreFilterExtensions do not exist for this plugin.
+// PreFilterExtensions 此插件没有预过滤器扩展。
 func (pl *NodePorts) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
 }
 
 func getPreFilterState(cycleState *framework.CycleState) (preFilterState, error) {
+	// 读取保存的 pod 的端口信息
 	c, err := cycleState.Read(preFilterStateKey)
 	if err != nil {
 		// preFilterState doesn't exist, likely PreFilter wasn't invoked.
+		// preFilterState 不存在，可能没有调用 PreFilter。
 		return nil, fmt.Errorf("reading %q from cycleState: %w", preFilterStateKey, err)
 	}
 
@@ -99,8 +110,8 @@ func getPreFilterState(cycleState *framework.CycleState) (preFilterState, error)
 	return s, nil
 }
 
-// EventsToRegister returns the possible events that may make a Pod
-// failed by this plugin schedulable.
+// EventsToRegister returns the possible events that may make a Pod failed by this plugin schedulable.
+// EventsToRegister 返回可能使 Pod 无法调度的事件。
 func (pl *NodePorts) EventsToRegister() []framework.ClusterEvent {
 	return []framework.ClusterEvent{
 		// Due to immutable fields `spec.containers[*].ports`, pod update events are ignored.
@@ -111,11 +122,13 @@ func (pl *NodePorts) EventsToRegister() []framework.ClusterEvent {
 
 // Filter invoked at the filter extension point.
 func (pl *NodePorts) Filter(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+	// 获取 pod 的端口信息
 	wantPorts, err := getPreFilterState(cycleState)
 	if err != nil {
 		return framework.AsStatus(err)
 	}
 
+	// 检查节点是否有空闲端口
 	fits := fitsPorts(wantPorts, nodeInfo)
 	if !fits {
 		return framework.NewStatus(framework.Unschedulable, ErrReason)
@@ -131,6 +144,7 @@ func Fits(pod *v1.Pod, nodeInfo *framework.NodeInfo) bool {
 
 func fitsPorts(wantPorts []*v1.ContainerPort, nodeInfo *framework.NodeInfo) bool {
 	// try to see whether existingPorts and wantPorts will conflict or not
+	// 尝试查看 existingPorts 和 wantPorts 是否会发生冲突
 	existingPorts := nodeInfo.UsedPorts
 	for _, cp := range wantPorts {
 		if existingPorts.CheckConflict(cp.HostIP, string(cp.Protocol), cp.HostPort) {
@@ -141,6 +155,7 @@ func fitsPorts(wantPorts []*v1.ContainerPort, nodeInfo *framework.NodeInfo) bool
 }
 
 // New initializes a new plugin and returns it.
+// New 初始化一个新的插件并返回它。
 func New(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
 	return &NodePorts{}, nil
 }

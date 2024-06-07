@@ -304,6 +304,9 @@ func topologyNormalizingWeight(size int) float64 {
 // topology domain, the constraint's maxSkew and the topology weight.
 // `maxSkew-1` is added to the score so that differences between topology
 // domains get watered down, controlling the tolerance of the score to skews.
+// scoreForCount 计算基于拓扑域中匹配的Pod数量、约束的最大偏差和拓扑权重的分数。
+// 将`maxSkew-1`添加到分数中，以便拓扑域之间的差异被淡化，控制分数对偏差的容忍度。
+// 例如：如果maxSkew=2，那么scoreForCount(cnt, maxSkew, tpWeight) = cnt*tpWeight + 1
 func scoreForCount(cnt int64, maxSkew int32, tpWeight float64) float64 {
 	return float64(cnt)*tpWeight + float64(maxSkew-1)
 }

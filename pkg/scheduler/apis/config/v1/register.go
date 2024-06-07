@@ -38,5 +38,6 @@ func init() {
 	// We only register manually written functions here. The registration of the
 	// generated functions takes place in the generated files. The separation
 	// makes the code compile even when the generated files are missing.
+	// 在这里我们只注册手动编写的函数。生成函数的注册在生成的文件中进行。这种分离使得代码在生成的文件丢失时也能编译。
 	localSchemeBuilder.Register(addDefaultingFuncs)
 }

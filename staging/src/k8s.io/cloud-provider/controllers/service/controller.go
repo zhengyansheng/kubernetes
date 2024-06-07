@@ -129,6 +129,8 @@ func New(
 				svc, ok := cur.(*v1.Service)
 				// Check cleanup here can provide a remedy when controller failed to handle
 				// changes before it exiting (e.g. crashing, restart, etc.).
+				// 检查清理可以在控制器在退出之前无法处理更改时提供补救（例如崩溃，重新启动等）。
+				// 改变之后，需要重新处理
 				if ok && (wantsLoadBalancer(svc) || needsCleanup(svc)) {
 					s.enqueueService(cur)
 				}
@@ -366,6 +368,7 @@ func (c *Controller) syncLoadBalancerIfNeeded(ctx context.Context, service *v1.S
 		if exists {
 			klog.V(2).Infof("Deleting existing load balancer for service %s", key)
 			c.eventRecorder.Event(service, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer")
+			// EnsureLoadBalancerDeleted 确定删除负载均衡器
 			if err := c.balancer.EnsureLoadBalancerDeleted(ctx, c.clusterName, service); err != nil {
 				if err == cloudprovider.ImplementedElsewhere {
 					klog.V(4).Infof("LoadBalancer for service %s implemented by a different controller %s, Ignoring error on deletion", key, c.cloud.ProviderName())

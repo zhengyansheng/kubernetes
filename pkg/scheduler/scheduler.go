@@ -70,6 +70,8 @@ type Scheduler struct {
 	// is available. We don't use a channel for this, because scheduling
 	// a pod may take some amount of time and we don't want pods to get
 	// stale while they sit in a channel.
+	// NextPod 应该是一个阻塞函数，直到下一个 pod 可用。我们不使用通道，
+	// 因为调度一个 pod 可能需要一些时间，我们不希望 pod 在通道中停留时变得过时。
 	NextPod func() *framework.QueuedPodInfo
 
 	// FailureHandler is called upon a scheduling failure.
@@ -114,6 +116,7 @@ type schedulerOptions struct {
 	podMaxBackoffSeconds              int64
 	podMaxInUnschedulablePodsDuration time.Duration
 	// Contains out-of-tree plugins to be merged with the in-tree registry.
+	// 包含要与内部注册表合并的外部插件。
 	frameworkOutOfTreeRegistry frameworkruntime.Registry
 	profiles                   []schedulerapi.KubeSchedulerProfile
 	extenders                  []schedulerapi.Extender
@@ -243,6 +246,7 @@ var defaultSchedulerOptions = schedulerOptions{
 }
 
 // New returns a Scheduler
+// New: 返回一个 Scheduler
 func New(client clientset.Interface,
 	informerFactory informers.SharedInformerFactory,
 	dynInformerFactory dynamicinformer.DynamicSharedInformerFactory,
@@ -305,6 +309,7 @@ func New(client clientset.Interface,
 		frameworkruntime.WithParallelism(int(options.parallelism)),
 		frameworkruntime.WithExtenders(extenders),
 	)
+
 	if err != nil {
 		return nil, fmt.Errorf("initializing profiles: %v", err)
 	}

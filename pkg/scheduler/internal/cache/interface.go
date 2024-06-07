@@ -91,6 +91,7 @@ type Cache interface {
 	GetPod(pod *v1.Pod) (*v1.Pod, error)
 
 	// IsAssumedPod returns true if the pod is assumed and not expired.
+	// IsAssumedPod 返回true，如果pod被假定并且没有过期。
 	IsAssumedPod(pod *v1.Pod) (bool, error)
 
 	// AddNode adds overall information about node.

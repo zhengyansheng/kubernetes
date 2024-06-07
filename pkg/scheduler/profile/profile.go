@@ -46,6 +46,7 @@ func newProfile(cfg config.KubeSchedulerProfile, r frameworkruntime.Registry, re
 type Map map[string]framework.Framework
 
 // NewMap builds the frameworks given by the configuration, indexed by name.
+// NewMap 构建由配置给出的框架，按名称索引。
 func NewMap(cfgs []config.KubeSchedulerProfile, r frameworkruntime.Registry, recorderFact RecorderFactory,
 	stopCh <-chan struct{}, opts ...frameworkruntime.Option) (Map, error) {
 	m := make(Map)

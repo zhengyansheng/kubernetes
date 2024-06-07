@@ -257,7 +257,7 @@ func (le *LeaderElector) acquire(ctx context.Context) bool {
 
 	succeeded := false
 	desc := le.config.Lock.Describe()
-	klog.Infof("attempting to acquire leader lease %v...", desc)
+	klog.Infof("attempting to acquire leader lease %v...", desc) // desc: kube-system/kube-scheduler
 
 	// JitterUntil: 直到 ctx 被 cancel()，否则持续运行
 	wait.JitterUntil(func() {
@@ -275,9 +275,11 @@ func (le *LeaderElector) acquire(ctx context.Context) bool {
 		le.metrics.leaderOn(le.config.Name)
 		klog.Infof("successfully acquired lease %v", desc)
 
-		// 获取租约成功则 context cancel()
 		cancel()
+
 	}, le.config.RetryPeriod, JitterFactor, true, ctx.Done())
+	// RetryPeriod: 2s
+	// jitterFactor: 1.2
 
 	return succeeded
 }
@@ -355,7 +357,6 @@ func (le *LeaderElector) tryAcquireOrRenew(ctx context.Context) bool {
 	}
 
 	// 1. obtain or create the ElectionRecord
-	// 获取 ElectionRecord
 	// oldLeaderElectionRecord: LeaderElectionRecord spec
 	// oldLeaderElectionRawRecord: LeaderElectionRecord spec byte
 	oldLeaderElectionRecord, oldLeaderElectionRawRecord, err := le.config.Lock.Get(ctx)
@@ -390,8 +391,8 @@ func (le *LeaderElector) tryAcquireOrRenew(ctx context.Context) bool {
 		return false
 	}
 
-	// 3. We're going to try to update. The leaderElectionRecord is set to it's default
-	// here. Let's correct it before updating.
+	// 3. We're going to try to update. The leaderElectionRecord is set to it's default here.
+	// Let's correct it before updating.
 	if le.IsLeader() {
 		leaderElectionRecord.AcquireTime = oldLeaderElectionRecord.AcquireTime
 		leaderElectionRecord.LeaderTransitions = oldLeaderElectionRecord.LeaderTransitions
@@ -400,6 +401,7 @@ func (le *LeaderElector) tryAcquireOrRenew(ctx context.Context) bool {
 	}
 
 	// update the lock itself
+	// 更新锁自身
 	if err = le.config.Lock.Update(ctx, leaderElectionRecord); err != nil {
 		klog.Errorf("Failed to update lock: %v", err)
 		return false

@@ -148,10 +148,13 @@ type PriorityQueue struct {
 	clock clock.Clock
 
 	// pod initial backoff duration.
+	// pod 初始退避时间
 	podInitialBackoffDuration time.Duration
 	// pod maximum backoff duration.
+	// pod 最大退避时间
 	podMaxBackoffDuration time.Duration
 	// the maximum time a pod can stay in the unschedulablePods.
+	// pod 可以停留在 unschedulablePods 中的最长时间
 	podMaxInUnschedulablePodsDuration time.Duration
 
 	lock sync.RWMutex
@@ -163,9 +166,12 @@ type PriorityQueue struct {
 	// 堆头是最高优先级的pod
 	activeQ *heap.Heap
 	// podBackoffQ is a heap ordered by backoff expiry.
+	// podBackoffQ 是按退避到期排序的堆
 	// Pods which have completed backoff are popped from this heap before the scheduler looks at activeQ
+
 	// podBackoffQ是按退避到期排序的堆
 	// 在调度器查看activeQ之前，已完成回退的Pod将从该堆中弹出
+
 	podBackoffQ *heap.Heap
 	// unschedulablePods holds pods that have been tried and determined unschedulable.
 	// UnschedulePods保存已尝试并确定为不可调度的pod
@@ -298,9 +304,9 @@ func NewPriorityQueue(
 		PodNominator:                      options.podNominator,
 		clock:                             options.clock,
 		stop:                              make(chan struct{}),
-		podInitialBackoffDuration:         options.podInitialBackoffDuration,
-		podMaxBackoffDuration:             options.podMaxBackoffDuration,
-		podMaxInUnschedulablePodsDuration: options.podMaxInUnschedulablePodsDuration,
+		podInitialBackoffDuration:         options.podInitialBackoffDuration,         // 1秒
+		podMaxBackoffDuration:             options.podMaxBackoffDuration,             // 10秒
+		podMaxInUnschedulablePodsDuration: options.podMaxInUnschedulablePodsDuration, // 5分钟
 		activeQ:                           heap.NewWithRecorder(podInfoKeyFunc, comp, metrics.NewActivePodsRecorder()),
 		unschedulablePods:                 newUnschedulablePods(metrics.NewUnschedulablePodsRecorder(), metrics.NewGatedPodsRecorder()),
 		moveRequestCycle:                  -1,
@@ -374,6 +380,7 @@ func (p *PriorityQueue) addToActiveQ(pInfo *framework.QueuedPodInfo) (bool, erro
 
 // Add adds a pod to the active queue. It should be called only when a new pod
 // is added so there is no chance the pod is already in active/unschedulable/backoff queues
+// Add 添加一个 pod 到 active 队列，只有在添加新 pod 时才应该调用，因此没有机会 pod 已经在 active/unschedulable/backoff 队列中
 func (p *PriorityQueue) Add(pod *v1.Pod) error {
 	p.lock.Lock()
 	defer p.lock.Unlock()
@@ -532,9 +539,11 @@ func (p *PriorityQueue) flushBackoffQCompleted() {
 		if rawPodInfo == nil {
 			break
 		}
+		// 断言
 		pInfo := rawPodInfo.(*framework.QueuedPodInfo)
 		pod := pInfo.Pod
 		if p.isPodBackingoff(pInfo) {
+			// 如果pod是backoff状态直接结束
 			break
 		}
 
@@ -704,6 +713,8 @@ func (p *PriorityQueue) Delete(pod *v1.Pod) error {
 
 // AssignedPodAdded is called when a bound pod is added.
 // Creation of this pod may make pending pods with matching affinity terms schedulable.
+// AssignedPodAdded 在添加绑定的pod时调用
+// 此pod的创建可能使具有匹配亲和性术语的挂起pod可调度
 func (p *PriorityQueue) AssignedPodAdded(pod *v1.Pod) {
 	p.lock.Lock()
 	p.movePodsToActiveOrBackoffQueue(p.getUnschedulablePodsWithMatchingAffinityTerm(pod), AssignedPodAdd)
@@ -880,6 +891,7 @@ func (p *PriorityQueue) newQueuedPodInfo(pod *v1.Pod, plugins ...string) *framew
 
 // getBackoffTime returns the time that podInfo completes backoff
 func (p *PriorityQueue) getBackoffTime(podInfo *framework.QueuedPodInfo) time.Time {
+	// 计算 backoff 时间
 	duration := p.calculateBackoffDuration(podInfo)
 	backoffTime := podInfo.Timestamp.Add(duration)
 	return backoffTime
@@ -887,10 +899,12 @@ func (p *PriorityQueue) getBackoffTime(podInfo *framework.QueuedPodInfo) time.Ti
 
 // calculateBackoffDuration is a helper function for calculating the backoffDuration
 // based on the number of attempts the pod has made.
+// calculateBackoffDuration 是一个辅助函数，用于根据 pod 的尝试次数计算 backoffDuration。
 func (p *PriorityQueue) calculateBackoffDuration(podInfo *framework.QueuedPodInfo) time.Duration {
-	duration := p.podInitialBackoffDuration
+	duration := p.podInitialBackoffDuration // 1s
 	for i := 1; i < podInfo.Attempts; i++ {
 		// Use subtraction instead of addition or multiplication to avoid overflow.
+		// 使用减法而不是加法或乘法，以避免溢出。
 		if duration > p.podMaxBackoffDuration-duration {
 			return p.podMaxBackoffDuration
 		}
@@ -907,8 +921,10 @@ func updatePod(oldPodInfo interface{}, newPod *v1.Pod) *framework.QueuedPodInfo 
 
 // UnschedulablePods holds pods that cannot be scheduled. This data structure
 // is used to implement unschedulablePods.
+// UnschedulablePods 保存无法调度的 pod。这个数据结构用于实现 unschedulablePods。
 type UnschedulablePods struct {
 	// podInfoMap is a map key by a pod's full-name and the value is a pointer to the QueuedPodInfo.
+	// podInfoMap 是一个 map，key 是 pod 的全名，value 是指向 QueuedPodInfo 的指针
 	podInfoMap map[string]*framework.QueuedPodInfo
 	keyFunc    func(*v1.Pod) string
 	// unschedulableRecorder/gatedRecorder updates the counter when elements of an unschedulablePodsMap

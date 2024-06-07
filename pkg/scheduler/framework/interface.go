@@ -439,6 +439,7 @@ type ScorePlugin interface {
 	// Score is called on each filtered node. It must return success and an integer
 	// indicating the rank of the node. All scoring plugins must return success or
 	// the pod will be rejected.
+	// Score 被调用在每个过滤的节点上，它必须返回成功和一个表示节点排名的整数
 	Score(ctx context.Context, state *CycleState, p *v1.Pod, nodeName string) (int64, *Status)
 
 	// ScoreExtensions returns a ScoreExtensions interface if it implements one, or nil if does not.

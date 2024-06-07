@@ -41,6 +41,7 @@ type resourceAllocationScorer struct {
 func (r *resourceAllocationScorer) score(
 	pod *v1.Pod,
 	nodeInfo *framework.NodeInfo) (int64, *framework.Status) {
+
 	node := nodeInfo.Node()
 	if node == nil {
 		return 0, framework.NewStatus(framework.Error, "node not found")

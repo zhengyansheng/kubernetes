@@ -248,6 +248,7 @@ func (sched *Scheduler) deletePodFromCache(obj interface{}) {
 }
 
 // assignedPod selects pods that are assigned (scheduled and running).
+// assignedPod 选择已分配的Pod（已调度和运行）。如果Pod的NodeName字段不为空，则认为Pod已经被分配。
 func assignedPod(pod *v1.Pod) bool {
 	if len(pod.Spec.NodeName) != 0 {
 		klog.V(3).Infof("分配 pod 到 node， node name: %v", pod.Spec.NodeName)

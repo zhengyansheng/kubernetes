@@ -23,6 +23,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/names"
 )
@@ -30,6 +31,9 @@ import (
 // The two thresholds are used as bounds for the image score range.
 // They correspond to a reasonable size range for container images compressed and stored in registries;
 // 90%ile of images on dockerhub drops into this range.
+// 这2个阈值用作镜像分数范围的边界。
+// 它们对应于压缩并存储在注册表中的容器镜像的合理大小范围；
+// dockerhub上90%的镜像都在这个范围内。
 const (
 	mb                    int64 = 1024 * 1024
 	minThreshold          int64 = 23 * mb
@@ -52,12 +56,17 @@ func (pl *ImageLocality) Name() string {
 }
 
 // Score invoked at the score extension point.
+// Score favors nodes that already have requested pod container's images.
 func (pl *ImageLocality) Score(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (int64, *framework.Status) {
 	// 从快照中查找 node
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
 		return 0, framework.AsStatus(fmt.Errorf("getting node %q from Snapshot: %w", nodeName, err))
 	}
+
+	//for key, image := range nodeInfo.ImageStates {
+	//	klog.Infof("--->name: %v, key: %v, size: %v, nodes: %+v", nodeInfo.Node().Name, key, image.Size, image.NumNodes)
+	//}
 
 	// 从快照中获取所有的node
 	nodeInfos, err := pl.handle.SnapshotSharedLister().NodeInfos().List()
@@ -68,7 +77,10 @@ func (pl *ImageLocality) Score(ctx context.Context, state *framework.CycleState,
 
 	// 计算分数
 	// sumImageScores: 计算pod中多个容器的镜像大小的和
-	score := calculatePriority(sumImageScores(nodeInfo, pod.Spec.Containers, totalNumNodes), len(pod.Spec.Containers))
+	sumScores := sumImageScores(nodeInfo, pod.Spec.Containers, totalNumNodes)
+	klog.Infof("----->Pod %s/%s sumScores: %d", pod.Namespace, pod.Name, sumScores)
+	score := calculatePriority(sumScores, len(pod.Spec.Containers))
+	//score := calculatePriority(sumImageScores(nodeInfo, pod.Spec.Containers, totalNumNodes), len(pod.Spec.Containers))
 
 	return score, nil
 }
@@ -104,10 +116,16 @@ func calculatePriority(sumScores int64, numContainers int) int64 {
 // the final score. Note that the init containers are not considered for it's rare for users to deploy huge init containers.
 // 求一个pod中多个容器镜像大小的和
 func sumImageScores(nodeInfo *framework.NodeInfo, containers []v1.Container, totalNumNodes int) int64 {
+	/*
+	   - docker.io/library/nginx:stable-perl
+	   sizeBytes: 79205939
+	*/
 	var sum int64
 	for _, container := range containers {
 		// normalizedImageName -> xx/xx/xx:{version}
-		if state, ok := nodeInfo.ImageStates[normalizedImageName(container.Image)]; ok {
+		state, ok := nodeInfo.ImageStates[normalizedImageName(container.Image)]
+		klog.Infof("state: %v, ok: %v, image: %v", state, ok, normalizedImageName(container.Image))
+		if ok {
 			sum += scaledImageScore(state, totalNumNodes)
 		}
 	}
@@ -119,6 +137,7 @@ func sumImageScores(nodeInfo *framework.NodeInfo, containers []v1.Container, tot
 // This heuristic aims to mitigate the undesirable "node heating problem", i.e., pods get assigned to the same or
 // a few nodes due to image locality.
 func scaledImageScore(imageState *framework.ImageStateSummary, totalNumNodes int) int64 {
+	//klog.Infof("NumNodes: %v totalNumNodes: %v", imageState.NumNodes, float64(totalNumNodes))
 	spread := float64(imageState.NumNodes) / float64(totalNumNodes)
 	return int64(float64(imageState.Size) * spread)
 }
@@ -128,6 +147,7 @@ func scaledImageScore(imageState *framework.ImageStateSummary, totalNumNodes int
 // 1. Using Docker as runtime and docker.io/library/test:tag in pod spec, but only test:tag will present in node status
 // 2. Using the implicit registry, i.e., test:tag or library/test:tag in pod spec but only docker.io/library/test:tag
 // in node status; note that if users consistently use one registry format, this should not happen.
+// 如果没有指定tag,则默认为latest，否则直接返回
 func normalizedImageName(name string) string {
 	if strings.LastIndex(name, ":") <= strings.LastIndex(name, "/") {
 		name = name + ":latest"

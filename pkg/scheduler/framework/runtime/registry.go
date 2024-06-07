@@ -27,6 +27,7 @@ import (
 )
 
 // PluginFactory is a function that builds a plugin.
+// PluginFactory 是一个构建插件的函数。
 type PluginFactory = func(configuration runtime.Object, f framework.Handle) (framework.Plugin, error)
 
 // PluginFactoryWithFts is a function that builds a plugin with certain feature gates.
@@ -71,6 +72,7 @@ type Registry map[string]PluginFactory
 
 // Register adds a new plugin to the registry. If a plugin with the same name
 // exists, it returns an error.
+// Register 将新插件添加到注册表中。如果已存在具有相同名称的插件，则返回错误。
 func (r Registry) Register(name string, factory PluginFactory) error {
 	if _, ok := r[name]; ok {
 		return fmt.Errorf("a plugin named %v already exists", name)
@@ -81,6 +83,7 @@ func (r Registry) Register(name string, factory PluginFactory) error {
 
 // Unregister removes an existing plugin from the registry. If no plugin with
 // the provided name exists, it returns an error.
+// Unregister 从注册表中删除现有插件。如果不存在具有提供的名称的插件，则返回错误。
 func (r Registry) Unregister(name string) error {
 	if _, ok := r[name]; !ok {
 		return fmt.Errorf("no plugin named %v exists", name)
@@ -90,6 +93,7 @@ func (r Registry) Unregister(name string) error {
 }
 
 // Merge merges the provided registry to the current one.
+// Merge 将提供的注册表合并到当前注册表中。
 func (r Registry) Merge(in Registry) error {
 	for name, factory := range in {
 		if err := r.Register(name, factory); err != nil {

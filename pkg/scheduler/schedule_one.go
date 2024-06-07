@@ -64,7 +64,8 @@ const (
 // scheduleOne为单个pod执行整个调度工作流
 // 一次只能调度一个pod
 func (sched *Scheduler) scheduleOne(ctx context.Context) {
-	podInfo := sched.NextPod() // -> Queue.Pop()
+	// 从SchedulingQueue中获取下一个Pod
+	podInfo := sched.NextPod() // -> Queue.Pop() // internalqueue.MakeNextPodFunc(podQueue),
 	// pod could be nil when schedulerQueue is closed
 	// 当schedulerQueue关闭时，pod可能为nil
 	if podInfo == nil || podInfo.Pod == nil {
@@ -93,6 +94,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 	state.SetRecordPluginMetrics(rand.Intn(100) < pluginMetricsSamplePercent)
 
 	// Initialize an empty podsToActivate struct, which will be filled up by plugins or stay empty.
+	// 初始化一个空的podsToActivate结构，该结构将由插件填充或保持为空
 	podsToActivate := framework.NewPodsToActivate()
 	state.Write(framework.PodsToActivateKey, podsToActivate)
 
@@ -101,6 +103,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 	defer cancel()
 
 	// 调度周期
+	// assumedPodInfo 假定的pod信息
 	scheduleResult, assumedPodInfo, status := sched.schedulingCycle(schedulingCycleCtx, state, fwk, podInfo, start, podsToActivate)
 	if !status.IsSuccess() {
 		sched.FailureHandler(schedulingCycleCtx, fwk, assumedPodInfo, status, scheduleResult.nominatingInfo, start)
@@ -131,6 +134,7 @@ func (sched *Scheduler) scheduleOne(ctx context.Context) {
 var clearNominatedNode = &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""}
 
 // schedulingCycle tries to schedule a single Pod.
+// 尝试去调度一个单独的Pod
 func (sched *Scheduler) schedulingCycle(
 	ctx context.Context,
 	state *framework.CycleState,
@@ -142,7 +146,7 @@ func (sched *Scheduler) schedulingCycle(
 
 	pod := podInfo.Pod
 	// 要绑定的 node
-	scheduleResult, err := sched.SchedulePod(ctx, fwk, state, pod)
+	scheduleResult, err := sched.SchedulePod(ctx, fwk, state, pod) // s.schedulePod
 	if err != nil {
 		if err == ErrNoNodesAvailable {
 			status := framework.NewStatus(framework.UnschedulableAndUnresolvable).WithError(err)
@@ -204,8 +208,10 @@ func (sched *Scheduler) schedulingCycle(
 	}
 
 	// Run the Reserve method of reserve plugins.
+	// 运行reserve插件的Reserve方法
 	if sts := fwk.RunReservePluginsReserve(ctx, state, assumedPod, scheduleResult.SuggestedHost); !sts.IsSuccess() {
 		// trigger un-reserve to clean up state associated with the reserved Pod
+		// 触发un-reserve清理与保留的Pod相关的状态
 		fwk.RunReservePluginsUnreserve(ctx, state, assumedPod, scheduleResult.SuggestedHost)
 		if forgetErr := sched.Cache.ForgetPod(assumedPod); forgetErr != nil {
 			klog.ErrorS(forgetErr, "Scheduler cache ForgetPod failed")
@@ -343,6 +349,9 @@ func (sched *Scheduler) skipPodSchedule(fwk framework.Framework, pod *v1.Pod) bo
 	// Case 2: pod that has been assumed could be skipped.
 	// An assumed pod can be added again to the scheduling queue if it got an update event
 	// during its previous scheduling cycle but before getting assumed.
+	// pod 被假设的情况下可以跳过
+	// 如果在上一个调度周期中，pod在被假设之前收到了更新事件，那么可以将其再次添加到调度队列中
+	// 如果pod被假设，那么就不需要再次调度
 	isAssumed, err := sched.Cache.IsAssumedPod(pod)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("failed to check whether pod %s/%s is assumed: %v", pod.Namespace, pod.Name, err))
@@ -354,6 +363,8 @@ func (sched *Scheduler) skipPodSchedule(fwk framework.Framework, pod *v1.Pod) bo
 // schedulePod tries to schedule the given pod to one of the nodes in the node list.
 // If it succeeds, it will return the name of the node.
 // If it fails, it will return a FitError with reasons.
+// schedulePod尝试将给定的pod调度到节点列表中的一个节点
+// 如果成功，它将返回节点的名称 如果失败，它将返回一个带有原因的FitError
 func (sched *Scheduler) schedulePod(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *v1.Pod) (result ScheduleResult, err error) {
 	trace := utiltrace.New("Scheduling", utiltrace.Field{Key: "namespace", Value: pod.Namespace}, utiltrace.Field{Key: "name", Value: pod.Name})
 	defer trace.LogIfLong(100 * time.Millisecond)
@@ -368,13 +379,18 @@ func (sched *Scheduler) schedulePod(ctx context.Context, fwk framework.Framework
 	}
 
 	// 1. 预选，查找nodes匹配到合适的pod
+	/*
+		feasibleNodes: 可行的nodes, 通过预选的nodes
+		diagnosis: 诊断
+	*/
 	feasibleNodes, diagnosis, err := sched.findNodesThatFitPod(ctx, fwk, state, pod)
 	if err != nil {
 		return result, err
 	}
-	trace.Step("Computing predicates done")
+	trace.Step("Computing predicates done") // 计算预选完成
 
 	if len(feasibleNodes) == 0 {
+		// 预选失败 返回错误
 		return result, &framework.FitError{
 			Pod:         pod,
 			NumAllNodes: sched.nodeInfoSnapshot.NumNodes(),
@@ -383,6 +399,7 @@ func (sched *Scheduler) schedulePod(ctx context.Context, fwk framework.Framework
 	}
 
 	// When only one node after predicate, just use it.
+	// 当predicate之后只有一个节点时，只需使用它
 	if len(feasibleNodes) == 1 {
 		return ScheduleResult{
 			SuggestedHost:  feasibleNodes[0].Name,
@@ -724,6 +741,7 @@ func prioritizeNodes(
 	if len(extenders) != 0 && nodes != nil {
 		// allNodeExtendersScores has all extenders scores for all nodes.
 		// It is keyed with node name.
+		// allNodeExtendersScores包含所有节点的所有扩展程序分数
 		allNodeExtendersScores := make(map[string]*framework.NodePluginScores, len(nodes))
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -733,6 +751,7 @@ func prioritizeNodes(
 			}
 			wg.Add(1)
 			go func(extIndex int) {
+				// metrics
 				metrics.SchedulerGoroutines.WithLabelValues(metrics.PrioritizingExtender).Inc()
 				metrics.Goroutines.WithLabelValues(metrics.PrioritizingExtender).Inc()
 				defer func() {
@@ -740,6 +759,7 @@ func prioritizeNodes(
 					metrics.Goroutines.WithLabelValues(metrics.PrioritizingExtender).Dec()
 					wg.Done()
 				}()
+
 				prioritizedList, weight, err := extenders[extIndex].Prioritize(pod, nodes)
 				if err != nil {
 					// Prioritization errors from extender can be ignored, let k8s/other extenders determine the priorities
@@ -757,7 +777,11 @@ func prioritizeNodes(
 
 					// MaxExtenderPriority may diverge from the max priority used in the scheduler and defined by MaxNodeScore,
 					// therefore we need to scale the score returned by extenders to the score range used by the scheduler.
+					// MaxExtenderPriority可能与调度程序中使用的最大优先级不同，并由MaxNodeScore定义，
+					// 因此我们需要将扩展程序返回的分数缩放到调度程序使用的分数范围中
 					finalscore := score * weight * (framework.MaxNodeScore / extenderv1.MaxExtenderPriority)
+
+					klog.Infof("-----> nodename: %v,score: %v, weight: %v, finalscore:%v", nodename, score, weight, finalscore)
 
 					if allNodeExtendersScores[nodename] == nil {
 						allNodeExtendersScores[nodename] = &framework.NodePluginScores{
@@ -774,6 +798,7 @@ func prioritizeNodes(
 			}(i)
 		}
 		// wait for all go routines to finish
+		// 等待所有go例程完成
 		wg.Wait()
 		for i := range nodesScores {
 			if score, ok := allNodeExtendersScores[nodes[i].Name]; ok {

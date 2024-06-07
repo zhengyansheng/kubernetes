@@ -127,13 +127,13 @@ func LeaseSpecToLeaderElectionRecord(spec *coordinationv1.LeaseSpec) *LeaderElec
 }
 
 func LeaderElectionRecordToLeaseSpec(ler *LeaderElectionRecord) coordinationv1.LeaseSpec {
-	leaseDurationSeconds := int32(ler.LeaseDurationSeconds)
-	leaseTransitions := int32(ler.LeaderTransitions)
+	leaseDurationSeconds := int32(ler.LeaseDurationSeconds) // 租约周期
+	leaseTransitions := int32(ler.LeaderTransitions)        // 租约转换次数
 	return coordinationv1.LeaseSpec{
-		HolderIdentity:       &ler.HolderIdentity,
-		LeaseDurationSeconds: &leaseDurationSeconds,
-		AcquireTime:          &metav1.MicroTime{ler.AcquireTime.Time},
-		RenewTime:            &metav1.MicroTime{ler.RenewTime.Time},
-		LeaseTransitions:     &leaseTransitions,
+		HolderIdentity:       &ler.HolderIdentity,                     // 唯一的身份标识 节点名称_uuid
+		LeaseDurationSeconds: &leaseDurationSeconds,                   // 租约周期
+		AcquireTime:          &metav1.MicroTime{ler.AcquireTime.Time}, // 获取时间
+		RenewTime:            &metav1.MicroTime{ler.RenewTime.Time},   // 续订时间
+		LeaseTransitions:     &leaseTransitions,                       // 租约Leader更换的次数
 	}
 }

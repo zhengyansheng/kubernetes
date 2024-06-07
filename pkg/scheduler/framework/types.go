@@ -89,6 +89,7 @@ func (ce ClusterEvent) IsWildCard() bool {
 
 // QueuedPodInfo is a Pod wrapper with additional information related to the pod's status in the scheduling queue,
 // such as the timestamp when it's added to the queue.
+// QueuedPodInfo 是一个Pod包装器，其中包含与Pod在调度队列中的状态相关的其他信息，例如将其添加到队列时的时间戳。
 type QueuedPodInfo struct {
 	*PodInfo
 	// The time pod added to the scheduling queue.
@@ -106,6 +107,7 @@ type QueuedPodInfo struct {
 	// 如果Pod在调度周期中失败，记录其失败的插件名称
 	UnschedulablePlugins sets.String
 	// Whether the Pod is scheduling gated (by PreEnqueuePlugins) or not.
+	// flush未计划的Pods剩余时间
 	// 是否被调度
 	Gated bool
 }
@@ -127,10 +129,10 @@ func (pqi *QueuedPodInfo) DeepCopy() *QueuedPodInfo {
 // inter-pod affinity selectors).
 type PodInfo struct {
 	Pod                        *v1.Pod
-	RequiredAffinityTerms      []AffinityTerm
-	RequiredAntiAffinityTerms  []AffinityTerm
-	PreferredAffinityTerms     []WeightedAffinityTerm
-	PreferredAntiAffinityTerms []WeightedAffinityTerm
+	RequiredAffinityTerms      []AffinityTerm         // 硬亲和性
+	RequiredAntiAffinityTerms  []AffinityTerm         // 硬反亲和性
+	PreferredAffinityTerms     []WeightedAffinityTerm // 软权重亲和性
+	PreferredAntiAffinityTerms []WeightedAffinityTerm // 软权重反亲和性
 }
 
 // DeepCopy returns a deep copy of the PodInfo object.
@@ -377,7 +379,7 @@ type ImageStateSummary struct {
 	// 镜像的大小
 	Size int64
 	// Used to track how many nodes have this image
-	// 用于跟踪有多少节点具有此图像
+	// 有多少个节点有这个镜像
 	NumNodes int
 }
 
@@ -396,6 +398,7 @@ type NodeInfo struct {
 	PodsWithRequiredAntiAffinity []*PodInfo
 
 	// Ports allocated on the node.
+	// Ports 为分配在节点上使用
 	UsedPorts HostPortInfo
 
 	// Total requested resources of all pods on this node. This includes assumed
@@ -413,6 +416,8 @@ type NodeInfo struct {
 	// ImageStates holds the entry of an image if and only if this image is on the node. The entry can be used for
 	// checking an image's existence and advanced usage (e.g., image locality scheduling policy) based on the image
 	// state information.
+	// ImageStates 保存一个图像的条目，
+	// 当且仅当此图像在节点上时。如果需要，可以使用该条目检查图像的存在性和高级用法（例如，基于图像状态信息的图像位置调度策略）。
 	ImageStates map[string]*ImageStateSummary
 
 	// PVCRefCounts contains a mapping of PVC names to the number of pods on the node using it.
@@ -889,8 +894,8 @@ func (h HostPortInfo) Len() int {
 	return length
 }
 
-// CheckConflict checks if the input (ip, protocol, port) conflicts with the existing
-// ones in HostPortInfo.
+// CheckConflict checks if the input (ip, protocol, port) conflicts with the existing ones in HostPortInfo.
+// CheckConflict 检查输入的 (ip, protocol, port) 是否与 HostPortInfo 中的现有内容冲突。
 func (h HostPortInfo) CheckConflict(ip, protocol string, port int32) bool {
 	if port <= 0 {
 		return false

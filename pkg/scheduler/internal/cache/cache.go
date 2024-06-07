@@ -581,7 +581,7 @@ func (cache *cacheImpl) RemovePod(pod *v1.Pod) error {
 }
 
 func (cache *cacheImpl) IsAssumedPod(pod *v1.Pod) (bool, error) {
-	key, err := framework.GetPodKey(pod)
+	key, err := framework.GetPodKey(pod) // key -> uid
 	if err != nil {
 		return false, err
 	}

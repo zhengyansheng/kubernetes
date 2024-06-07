@@ -208,6 +208,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 	}
 
 	// If leader election is enabled, runCommand via LeaderElector until done and exit.
+	// 如果启用了领导者选举，则通过LeaderElector运行命令，直到完成并退出
 	if cc.LeaderElection != nil {
 		cc.LeaderElection.Callbacks = leaderelection.LeaderCallbacks{
 			OnStartedLeading: func(ctx context.Context) {
@@ -218,10 +219,12 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 				select {
 				case <-ctx.Done():
 					// We were asked to terminate. Exit 0.
-					klog.InfoS("Requested to terminate, exiting")
+					// 我们被要求终止。退出0。
+					klog.InfoS("Requested to terminate, exiting") // 请求终止，退出
 					os.Exit(0)
 				default:
 					// We lost the lock.
+					// 我们丢失了锁。
 					klog.ErrorS(nil, "Leaderelection lost")
 					klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 				}
@@ -238,6 +241,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 	}
 
 	// Leader election is disabled, so runCommand inline until done.
+	// 领导者选举被禁用，因此直到完成为止
 	close(waitingForLeader)
 	sched.Run(ctx)
 	return fmt.Errorf("finished without leader elect")
