@@ -137,8 +137,14 @@ type KubeSchedulerProfile struct {
 // omitted from the config, then the default set of plugins is used for that extension point.
 // Enabled plugins are called in the order specified here, after default plugins. If they need to
 // be invoked before default plugins, default plugins must be disabled and re-enabled here in desired order.
+// 插件包括多个扩展点。指定时，的插件列表
+// 特定的扩展点是唯一启用的扩展点。如果扩展点是
+// 从配置中省略，则默认的插件集用于该扩展点。
+// 启用的插件按此处指定的顺序调用，在默认插件之后调用。如果需要
+// 在默认插件之前调用，默认插件必须在此处按所需顺序禁用和重新启用。
 type Plugins struct {
 	// PreEnqueue is a list of plugins that should be invoked before adding pods to the scheduling queue.
+	// PreEnqueue是在将pod添加到调度队列之前应调用的插件列表
 	PreEnqueue PluginSet
 
 	// QueueSort is a list of plugins that should be invoked when sorting pods in the scheduling queue.

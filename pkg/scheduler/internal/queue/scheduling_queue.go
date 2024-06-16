@@ -332,8 +332,10 @@ func (p *PriorityQueue) Run() {
 // runPreEnqueuePlugins iterates PreEnqueue function in each registered PreEnqueuePlugin.
 // It returns true if all PreEnqueue function run successfully; otherwise returns false
 // upon the first failure.
-// Note: we need to associate the failed plugin to `pInfo`, so that the pod can be moved back
-// to activeQ by related cluster event.
+// Note: we need to associate the failed plugin to `pInfo`, so that the pod can be moved back to activeQ by related cluster event.
+// runPreEnqueuePlugins在每个注册的PreEnqueuePlugin中迭代PreEnqueue函数。
+// 如果所有PreEnqueue函数运行成功，则返回true；否则在第一次失败时返回false。
+// 注意：我们需要将失败的插件与“pInfo”关联，以便通过相关的集群事件将pod移回activeQ。
 func (p *PriorityQueue) runPreEnqueuePlugins(ctx context.Context, pInfo *framework.QueuedPodInfo) bool {
 	var s *framework.Status
 	pod := pInfo.Pod

@@ -44,12 +44,14 @@ func (pl *SchedulingGates) Name() string {
 
 func (pl *SchedulingGates) PreEnqueue(ctx context.Context, p *v1.Pod) *framework.Status {
 	if !pl.enablePodSchedulingReadiness || len(p.Spec.SchedulingGates) == 0 {
+		// 如果没有设置Pod的SchedulingGates 或者 PodSchedulingReadiness特性被禁用，则直接返回nil
 		return nil
 	}
 	var gates []string
 	for _, gate := range p.Spec.SchedulingGates {
 		gates = append(gates, gate.Name)
 	}
+	// 如果Pod的SchedulingGates不为空，则返回一个UnschedulableAndUnresolvable状态
 	return framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("waiting for scheduling gates: %v", gates))
 }
 

@@ -637,7 +637,7 @@ func (f *frameworkImpl) RunPreFilterPlugins(ctx context.Context, state *framewor
 		// 如果失败
 		if !s.IsSuccess() {
 			s.SetFailedPlugin(pl.Name())
-			if s.IsUnschedulable() {
+			if s.IsUnschedulable() { // Unschedulable, UnschedulableAndUnresolvable
 				return nil, s
 			}
 			return nil, framework.AsStatus(fmt.Errorf("running PreFilter plugin %q: %w", pl.Name(), s.AsError())).WithFailedPlugin(pl.Name())
