@@ -120,6 +120,7 @@ func (pl *DefaultPreemption) calculateNumCandidates(numNodes int32) int32 {
 
 // GetOffsetAndNumCandidates chooses a random offset and calculates the number
 // of candidates that should be shortlisted for dry running preemption.
+// GetOffsetAndNumCandidates选择一个随机偏移量，并计算应入围干运行抢占的候选数量。
 func (pl *DefaultPreemption) GetOffsetAndNumCandidates(numNodes int32) (int32, int32) {
 	return rand.Int31n(numNodes), pl.calculateNumCandidates(numNodes)
 }
@@ -235,6 +236,14 @@ func (pl *DefaultPreemption) SelectVictimsOnNode(
 //  2. The pod has already preempted other pods and the victims are in their graceful termination period.
 //     Currently we check the node that is nominated for this pod, and as long as there are
 //     terminating pods on this node, we don't attempt to preempt more pods.
+//
+// PodEligibleToPreemptOthers返回一个布尔和一个字符串。
+// bool表示是否应考虑此pod抢占其他pod
+// 该字符串包括此pod不合格的原因。
+// 原因有几个：
+// 1.pod的抢占策略为“从不”。
+// 2.该pod已经抢先了其他pod，受害者正处于优雅的终止期。
+// 目前，我们检查为该pod指定的节点，只要该节点上有终止pod，我们就不会试图抢占更多pod。
 func (pl *DefaultPreemption) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNodeStatus *framework.Status) (bool, string) {
 	if pod.Spec.PreemptionPolicy != nil && *pod.Spec.PreemptionPolicy == v1.PreemptNever {
 		return false, "not eligible due to preemptionPolicy=Never."
@@ -245,6 +254,8 @@ func (pl *DefaultPreemption) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNo
 	if len(nomNodeName) > 0 {
 		// If the pod's nominated node is considered as UnschedulableAndUnresolvable by the filters,
 		// then the pod should be considered for preempting again.
+		//如果pod的指定节点被filters认为是 UnschedulableAndUnresolvable
+		//则应当考虑pod再次抢占。
 		if nominatedNodeStatus.Code() == framework.UnschedulableAndUnresolvable {
 			return true, ""
 		}
@@ -254,6 +265,7 @@ func (pl *DefaultPreemption) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNo
 			for _, p := range nodeInfo.Pods {
 				if corev1helpers.PodPriority(p.Pod) < podPriority && podTerminatingByPreemption(p.Pod, pl.fts.EnablePodDisruptionConditions) {
 					// There is a terminating pod on the nominated node.
+					// 如果该节点上pod的优先级小于要被调度的pod的优先级 并且
 					return false, "not eligible due to a terminating pod on the nominated node."
 				}
 			}
@@ -264,12 +276,16 @@ func (pl *DefaultPreemption) PodEligibleToPreemptOthers(pod *v1.Pod, nominatedNo
 
 // podTerminatingByPreemption returns the pod's terminating state if feature PodDisruptionConditions is not enabled.
 // Otherwise, it additionally checks if the termination state is caused by scheduler preemption.
+// podTerminatingByPreemption 如果功能PodDisruptionConditions未启用，则返回pod的终止状态。
+// 否则，它会额外检查终止状态是否是由调度器抢占引起的
 func podTerminatingByPreemption(p *v1.Pod, enablePodDisruptionConditions bool) bool {
 	if p.DeletionTimestamp == nil {
+		// 如果pod被删除，返回false
 		return false
 	}
 
 	if !enablePodDisruptionConditions {
+		// 如果没有开启pd
 		return true
 	}
 
