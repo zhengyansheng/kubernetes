@@ -40,6 +40,7 @@ type BalancedAllocation struct {
 var _ framework.ScorePlugin = &BalancedAllocation{}
 
 // BalancedAllocationName is the name of the plugin used in the plugin registry and configurations.
+// BalancedAllocationName 是插件在插件注册表和配置中使用的名称。
 const BalancedAllocationName = names.NodeResourcesBalancedAllocation
 
 // Name returns name of the plugin. It is used in logs, etc.
@@ -59,6 +60,12 @@ func (ba *BalancedAllocation) Score(ctx context.Context, state *framework.CycleS
 	// Detail: score = (1 - std) * MaxNodeScore, where std is calculated by the root square of Σ((fraction(i)-mean)^2)/len(resources)
 	// The algorithm is partly inspired by:
 	// "Wei Huang et al. An Energy Efficient Virtual Machine Placement Algorithm with Balanced Resource Utilization"
+	// ba.score 优先选择资源使用率平衡的节点。
+	// 它计算这些资源的标准差，并根据这些资源的使用率彼此之间的接近程度对节点进行优先排序。
+	// 详细信息：score = (1 - std) * MaxNodeScore，其中 std 是通过 Σ((fraction(i)-mean)^2)/len(resources) 的平方根来计算的。
+	// 该算法部分受到以下启发：
+	// "Wei Huang 等人。具有平衡资源利用率的节能虚拟机放置算法"
+	//klog.Infof("pod: %v, node: %v", pod.Name, nodeName)
 	return ba.score(pod, nodeInfo)
 }
 

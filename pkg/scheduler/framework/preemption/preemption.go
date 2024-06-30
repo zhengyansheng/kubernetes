@@ -52,6 +52,7 @@ const (
 // along with the list of victims that should be evicted for the preemptor to fit the node.
 type Candidate interface {
 	// Victims wraps a list of to-be-preempted Pods and the number of PDB violation.
+	//Victims 受害者包装了一份要被抢占的Pod列表和违反PDB的次数
 	Victims() *extenderv1.Victims
 	// Name returns the target node name where the preemptor gets nominated to run.
 	Name() string
@@ -154,6 +155,9 @@ func (ev *Evaluator) Preempt(ctx context.Context, pod *v1.Pod, m framework.NodeT
 	// It's safe to directly fetch pod here. Because the informer cache has already been
 	// initialized when creating the Scheduler obj.
 	// However, tests may need to manually initialize the shared pod informer.
+	//0）获取最新版本的＜pod＞。
+	//直接在这里取 pod 是安全的。因为informer缓存已经 在创建Scheduler对象时初始化。
+	//但是，测试可能需要手动初始化共享pod informer。
 	podNamespace, podName := pod.Namespace, pod.Name
 	pod, err := ev.PodLister.Pods(pod.Namespace).Get(pod.Name)
 	if err != nil {
@@ -162,12 +166,14 @@ func (ev *Evaluator) Preempt(ctx context.Context, pod *v1.Pod, m framework.NodeT
 	}
 
 	// 1) Ensure the preemptor is eligible to preempt other pods.
+	// 1) 确保抢占者有资格抢占其他 pods
 	if ok, msg := ev.PodEligibleToPreemptOthers(pod, m[pod.Status.NominatedNodeName]); !ok {
 		klog.V(5).InfoS("Pod is not eligible for preemption", "pod", klog.KObj(pod), "reason", msg)
 		return nil, framework.NewStatus(framework.Unschedulable, msg)
 	}
 
 	// 2) Find all preemption candidates.
+	// 2) 查找所有抢占候选人
 	candidates, nodeToStatusMap, err := ev.findCandidates(ctx, pod, m)
 	if err != nil && len(candidates) == 0 {
 		return nil, framework.AsStatus(err)
@@ -188,18 +194,21 @@ func (ev *Evaluator) Preempt(ctx context.Context, pod *v1.Pod, m framework.NodeT
 	}
 
 	// 3) Interact with registered Extenders to filter out some candidates if needed.
+	//如果需要，与注册的扩展器交互以筛选出一些候选者。
 	candidates, status := ev.callExtenders(pod, candidates)
 	if !status.IsSuccess() {
 		return nil, status
 	}
 
 	// 4) Find the best candidate.
+	// 4) 找到最好的候选者
 	bestCandidate := ev.SelectCandidate(candidates)
 	if bestCandidate == nil || len(bestCandidate.Name()) == 0 {
 		return nil, framework.NewStatus(framework.Unschedulable, "no candidate node for preemption")
 	}
 
 	// 5) Perform preparation work before nominating the selected candidate.
+	//5) 在提名所选候选人之前进行准备工作
 	if status := ev.prepareCandidate(ctx, bestCandidate, pod, ev.PluginName); !status.IsSuccess() {
 		return nil, status
 	}
@@ -209,6 +218,8 @@ func (ev *Evaluator) Preempt(ctx context.Context, pod *v1.Pod, m framework.NodeT
 
 // FindCandidates calculates a slice of preemption candidates.
 // Each candidate is executable to make the given <pod> schedulable.
+// FindCandidate计算抢占候选的一部分。
+// 每个候选者都是可执行的，以使给定的＜pod＞可调度。
 func (ev *Evaluator) findCandidates(ctx context.Context, pod *v1.Pod, m framework.NodeToStatusMap) ([]Candidate, framework.NodeToStatusMap, error) {
 	allNodes, err := ev.Handler.SnapshotSharedLister().NodeInfos().List()
 	if err != nil {
@@ -342,6 +353,10 @@ func (ev *Evaluator) SelectCandidate(candidates []Candidate) Candidate {
 // - Evict the victim pods
 // - Reject the victim pods if they are in waitingPod map
 // - Clear the low-priority pods' nominatedNodeName status if needed
+// 准备候选人提名前，候选人会做一些准备工作：
+// - 驱逐 这些牺牲的pods
+// - 如果这些牺牲的pods在 waitingPod map中，则拒绝他们
+// - 如果需要，清除低优先级pod的nominatedNodeName状态
 func (ev *Evaluator) prepareCandidate(ctx context.Context, c Candidate, pod *v1.Pod, pluginName string) *framework.Status {
 	fh := ev.Handler
 	cs := ev.Handler.ClientSet()
@@ -353,6 +368,7 @@ func (ev *Evaluator) prepareCandidate(ctx context.Context, c Candidate, pod *v1.
 		victim := c.Victims().Pods[index]
 		// If the victim is a WaitingPod, send a reject message to the PermitPlugin.
 		// Otherwise we should delete the victim.
+		// 如果victim是一个WaitingPod，则向PermitPlugin发送拒绝消息。否则我们应该删除victim。
 		if waitingPod := fh.GetWaitingPod(victim.UID); waitingPod != nil {
 			waitingPod.Reject(pluginName, "preempted")
 		} else {
@@ -392,6 +408,8 @@ func (ev *Evaluator) prepareCandidate(ctx context.Context, c Candidate, pod *v1.
 	// this node. So, we should remove their nomination. Removing their
 	// nomination updates these pods and moves them to the active queue. It
 	// lets scheduler find another place for them.
+
+	// 查找优先级 比 指定pod 更低的pod
 	nominatedPods := getLowerPriorityNominatedPods(fh, pod, c.Name())
 	if err := util.ClearNominatedNodeName(ctx, cs, nominatedPods...); err != nil {
 		klog.ErrorS(err, "Cannot clear 'NominatedNodeName' field")
@@ -404,7 +422,7 @@ func (ev *Evaluator) prepareCandidate(ctx context.Context, c Candidate, pod *v1.
 // nodesWherePreemptionMightHelp returns a list of nodes with failed predicates
 // that may be satisfied by removing pods from the node.
 func nodesWherePreemptionMightHelp(nodes []*framework.NodeInfo, m framework.NodeToStatusMap) ([]*framework.NodeInfo, framework.NodeToStatusMap) {
-	var potentialNodes []*framework.NodeInfo
+	var potentialNodes []*framework.NodeInfo // 潜在节点
 	nodeStatuses := make(framework.NodeToStatusMap)
 	for _, node := range nodes {
 		name := node.Node().Name
@@ -564,14 +582,19 @@ func pickOneNodeForPreemption(nodesToVictims map[string]*extenderv1.Victims) str
 // manipulation of NodeInfo and PreFilter state per nominated pod. It may not be
 // worth the complexity, especially because we generally expect to have a very
 // small number of nominated pods per node.
+// nominated 被提名
 func getLowerPriorityNominatedPods(pn framework.PodNominator, pod *v1.Pod, nodeName string) []*v1.Pod {
+	//获取在指定nodeName上被提名的所有Pod的信息
 	podInfos := pn.NominatedPodsForNode(nodeName)
 
+	//如果podInfos的长度为0，即没有被提名的Pod，函数返回nil
 	if len(podInfos) == 0 {
 		return nil
 	}
 
+	//一个空的Pod切片lowerPriorityPods，用于存储满足条件的Pods
 	var lowerPriorityPods []*v1.Pod
+	//获取传入的pod的优先级
 	podPriority := corev1helpers.PodPriority(pod)
 	for _, pi := range podInfos {
 		if corev1helpers.PodPriority(pi.Pod) < podPriority {
@@ -599,6 +622,7 @@ func (ev *Evaluator) DryRunPreemption(ctx context.Context, pod *v1.Pod, potentia
 	checkNode := func(i int) {
 		nodeInfoCopy := potentialNodes[(int(offset)+i)%len(potentialNodes)].Clone()
 		stateCopy := ev.State.Clone()
+		// SelectVictimsOnNode 选择这个node上要牺牲的pods
 		pods, numPDBViolations, status := ev.SelectVictimsOnNode(ctx, stateCopy, pod, nodeInfoCopy, pdbs)
 		if status.IsSuccess() && len(pods) != 0 {
 			victims := extenderv1.Victims{

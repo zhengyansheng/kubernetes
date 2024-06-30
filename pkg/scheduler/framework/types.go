@@ -403,14 +403,18 @@ type NodeInfo struct {
 
 	// Total requested resources of all pods on this node. This includes assumed
 	// pods, which scheduler has sent for binding, but may not be scheduled yet.
+	// 所有节点上的所有Pod的总请求资源。这包括假设的Pod，调度程序已将其发送到绑定，但可能尚未调度。
 	Requested *Resource
 	// Total requested resources of all pods on this node with a minimum value
 	// applied to each container's CPU and memory requests. This does not reflect
 	// the actual resource requests for this node, but is used to avoid scheduling
 	// many zero-request pods onto one node.
+	// 所有节点上的所有Pod的总请求资源，每个容器的CPU和内存请求都应用了最小值。这不反映此节点的实际资源请求，
+	// 但用于避免将许多零请求的Pod调度到一个节点上。
 	NonZeroRequested *Resource
-	// We store allocatedResources (which is Node.Status.Allocatable.*) explicitly
-	// as int64, to avoid conversions and accessing map.
+
+	// We store allocatedResources (which is Node.Status.Allocatable.*) explicitly as int64, to avoid conversions and accessing map.
+	// 我们将 allocatedResources（即 Node.Status.Allocatable.*）显式存储为 int64，以避免转换和访问映射。
 	Allocatable *Resource
 
 	// ImageStates holds the entry of an image if and only if this image is on the node. The entry can be used for
@@ -439,11 +443,14 @@ func nextGeneration() int64 {
 
 // Resource is a collection of compute resource.
 type Resource struct {
+	// MilliCPU 是 CPU 的毫核数
 	MilliCPU         int64
 	Memory           int64
 	EphemeralStorage int64
 	// We store allowedPodNumber (which is Node.Status.Allocatable.Pods().Value())
 	// explicitly as int, to avoid conversions and improve performance.
+	// 我们将 allowedPodNumber（即 Node.Status.Allocatable.Pods().Value()）显式存储为 int，
+	// 以避免转换并提高性能。
 	AllowedPodNumber int
 	// ScalarResources
 	ScalarResources map[v1.ResourceName]int64

@@ -19,6 +19,8 @@ package feature
 // Features carries feature gate values used by various plugins.
 // This struct allows us to break the dependency of the plugins on
 // the internal k8s features pkg.
+// Features携带各种插件使用的功能门值。
+// 这个结构允许我们打破插件对内部k8s功能pkg的依赖。
 type Features struct {
 	EnableDynamicResourceAllocation              bool
 	EnableReadWriteOncePod                       bool

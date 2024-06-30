@@ -57,6 +57,10 @@ const (
 	// would be scored in each scheduling cycle. This is a semi-arbitrary value
 	// to ensure that a certain minimum of nodes are checked for feasibility.
 	// This in turn helps ensure a minimum level of spreading.
+	//minFeasibleNodesPercentageToFind是节点的最小百分比
+	//将在每个调度周期中进行评分。这是一个半任意值
+	//以确保检查某个最小节点的可行性。
+	//这反过来又有助于确保最低程度的传播。
 	minFeasibleNodesPercentageToFind = 5
 )
 
@@ -170,6 +174,7 @@ func (sched *Scheduler) schedulingCycle(
 		}
 
 		// Run PostFilter plugins to attempt to make the pod schedulable in a future scheduling cycle.
+		// 运行PostFilter插件，尝试使pod在未来的调度周期中可调度
 		result, status := fwk.RunPostFilterPlugins(ctx, state, pod, fitError.Diagnosis.NodeToStatusMap)
 		msg := status.Message()
 		fitError.Diagnosis.PostFilterMsg = msg
@@ -481,6 +486,7 @@ func (sched *Scheduler) findNodesThatFitPod(ctx context.Context, fwk framework.F
 		}
 	}
 	// feasibleNodes: 可行的nodes
+	// diagnosis: 诊断
 	feasibleNodes, err := sched.findNodesThatPassFilters(ctx, fwk, state, pod, diagnosis, nodes)
 	// always try to update the sched.nextStartNodeIndex regardless of whether an error has occurred
 	// this is helpful to make sure that all the nodes have a chance to be searched
@@ -530,14 +536,15 @@ func (sched *Scheduler) findNodesThatPassFilters(
 
 	// 快照中所有node的数量
 	numAllNodes := len(nodes)
-	// numFeasibleNodesToFind: 过滤一部分nodes
+	// numFeasibleNodesToFind: 要查找的可用节点数
 	numNodesToFind := sched.numFeasibleNodesToFind(fwk.PercentageOfNodesToScore(), int32(numAllNodes))
 
-	// Create feasible list with enough space to avoid growing it
-	// and allow assigning.
+	// Create feasible list with enough space to avoid growing it and allow assigning.
+	// 创建一个足够大的可行列表，以避免增长它并允许分配
 	feasibleNodes := make([]*v1.Node, numNodesToFind)
 
 	if !fwk.HasFilterPlugins() {
+		// 如果有 filter 插件 不会走这里
 		for i := range feasibleNodes {
 			feasibleNodes[i] = nodes[(sched.nextStartNodeIndex+i)%numAllNodes].Node()
 		}
@@ -552,7 +559,11 @@ func (sched *Scheduler) findNodesThatPassFilters(
 	checkNode := func(i int) {
 		// We check the nodes starting from where we left off in the previous scheduling cycle,
 		// this is to make sure all nodes have the same chance of being examined across pods.
+		// 我们从上一个调度周期结束的地方开始检查节点，这是为了确保所有节点在各个pod中被检查的机会相同
+		// sched.nextStartNodeIndex: 上一个调度周期结束的地方
+
 		nodeInfo := nodes[(sched.nextStartNodeIndex+i)%numAllNodes]
+		klog.Infof("checkNode i: %d, nextStartNodeIndex: %d, numAllNodes: %d, nodeInfo: %+v", i, sched.nextStartNodeIndex, numAllNodes, nodeInfo)
 		status := fwk.RunFilterPluginsWithNominatedPods(ctx, state, pod, nodeInfo)
 		if status.Code() == framework.Error {
 			errCh.SendErrorWithCancel(status.AsError(), cancel)
@@ -594,17 +605,18 @@ func (sched *Scheduler) findNodesThatPassFilters(
 	return feasibleNodes, nil
 }
 
-// numFeasibleNodesToFind returns the number of feasible nodes that once found, the scheduler stops
-// its search for more feasible nodes.
+// numFeasibleNodesToFind returns the number of feasible nodes that once found, the scheduler stops its search for more feasible nodes.
+// 返回一旦找到就停止搜索更多可行节点的调度器的可行节点数量。
+/*
+	如果集群的节点个数小于100，那么参与调度的节点个数就是当下集群的节点个数
+	如果集群节点个数大于100，那么参与调度的节点个数的计算公式没
+	前提 percentageOfNodesToScore ==0 -> 2000 * ( 50 - 2000 / 125 ) / 100
+*/
 func (sched *Scheduler) numFeasibleNodesToFind(percentageOfNodesToScore *int32, numAllNodes int32) (numNodes int32) {
-	/*
-		如果集群的节点个数小于100，那么参与调度的节点个数就是当下集群的节点个数
-		如果集群节点个数大于100，那么参与调度的节点个数的计算公式没
-		前提 percentageOfNodesToScore ==0 -> 2000 * ( 50 - 2000 / 125 ) / 100
-	*/
 	// minFeasibleNodesPercentageToFind = 100
 	// 如果集群节点数小于100，默认 filter 就按照当前集群的个数来过滤
-	if numAllNodes < minFeasibleNodesToFind {
+	klog.InfoS("num feasible nodes to find", "num all nodes", numAllNodes, "percentageOfNodesToScore", percentageOfNodesToScore, "sched percentageOfNodesToScore", sched.percentageOfNodesToScore)
+	if numAllNodes < minFeasibleNodesToFind { // minFeasibleNodesToFind = 100
 		return numAllNodes
 	}
 
@@ -614,20 +626,19 @@ func (sched *Scheduler) numFeasibleNodesToFind(percentageOfNodesToScore *int32, 
 	if percentageOfNodesToScore != nil {
 		percentage = *percentageOfNodesToScore
 	} else {
-		percentage = sched.percentageOfNodesToScore // == 0
+		percentage = sched.percentageOfNodesToScore // 默认percentageOfNodesToScore = 0
 	}
 	klog.V(3).Infof("percentage of nodes to score, percentage: %v\n", percentage)
 
 	if percentage == 0 {
-		percentage = int32(50) - numAllNodes/125 // 肯定小于50
-		// minFeasibleNodesPercentageToFind = 5
-		if percentage < minFeasibleNodesPercentageToFind {
+		percentage = int32(50) - numAllNodes/125           // 肯定小于50
+		if percentage < minFeasibleNodesPercentageToFind { // minFeasibleNodesPercentageToFind = 5
 			percentage = minFeasibleNodesPercentageToFind
 		}
 	}
 
 	numNodes = numAllNodes * percentage / 100
-	if numNodes < minFeasibleNodesToFind {
+	if numNodes < minFeasibleNodesToFind { // minFeasibleNodesToFind = 100
 		return minFeasibleNodesToFind
 	}
 
@@ -702,12 +713,14 @@ func prioritizeNodes(
 ) ([]framework.NodePluginScores, error) {
 	// If no priority configs are provided, then all nodes will have a score of one.
 	// This is required to generate the priority list in the required format
+	// 如果没有提供优先级配置，则所有节点的得分都为1
+	// 这是为了以所需格式生成优先级列表
 	if len(extenders) == 0 && !fwk.HasScorePlugins() {
 		result := make([]framework.NodePluginScores, 0, len(nodes))
 		for i := range nodes {
 			result = append(result, framework.NodePluginScores{
 				Name:       nodes[i].Name,
-				TotalScore: 1, // 得分都为1
+				TotalScore: 1, // 得分默认都为1
 			})
 		}
 		return result, nil
@@ -738,10 +751,11 @@ func prioritizeNodes(
 		}
 	}
 
+	klog.Infof("length extenders %d, length nodes %d", len(extenders), len(nodes))
 	if len(extenders) != 0 && nodes != nil {
-		// allNodeExtendersScores has all extenders scores for all nodes.
-		// It is keyed with node name.
-		// allNodeExtendersScores包含所有节点的所有扩展程序分数
+		klog.Infof("enter extenders")
+		// allNodeExtendersScores has all extenders scores for all nodes. It is keyed with node name.
+		// allNodeExtendersScores具有所有节点的所有扩展程序分数。 它以节点名称为键
 		allNodeExtendersScores := make(map[string]*framework.NodePluginScores, len(nodes))
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -779,7 +793,7 @@ func prioritizeNodes(
 					// therefore we need to scale the score returned by extenders to the score range used by the scheduler.
 					// MaxExtenderPriority可能与调度程序中使用的最大优先级不同，并由MaxNodeScore定义，
 					// 因此我们需要将扩展程序返回的分数缩放到调度程序使用的分数范围中
-					finalscore := score * weight * (framework.MaxNodeScore / extenderv1.MaxExtenderPriority)
+					finalscore := score * weight * (framework.MaxNodeScore / extenderv1.MaxExtenderPriority) // score * weight * 10
 
 					klog.Infof("-----> nodename: %v,score: %v, weight: %v, finalscore:%v", nodename, score, weight, finalscore)
 
@@ -830,10 +844,10 @@ func selectHost(nodeScores []framework.NodePluginScores) (string, error) {
 	// 从列表中求一个最大值，如果分数相等则随机替换最大值
 	maxScore := nodeScores[0].TotalScore
 	selected := nodeScores[0].Name
-	klog.V(3).Infof("run score plugin, name:%s, score: %+v, total score: %v\n", selected, nodeScores[0].Scores, maxScore)
+	klog.Infof("select 0 host, name:%s, score: %+v, total score: %v", selected, nodeScores[0].Scores, maxScore)
 	cntOfMaxScore := 1
-	for _, ns := range nodeScores[1:] {
-		klog.V(3).Infof("run score plugin, name:%s, score: %+v, total score: %v\n", ns.Name, ns.Scores, ns.TotalScore)
+	for idx, ns := range nodeScores[1:] {
+		klog.Infof("select %d host, name:%s, score: %+v, total score: %v", idx+1, ns.Name, ns.Scores, ns.TotalScore)
 		if ns.TotalScore > maxScore {
 			maxScore = ns.TotalScore
 			selected = ns.Name

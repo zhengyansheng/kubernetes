@@ -124,10 +124,10 @@ func sumImageScores(nodeInfo *framework.NodeInfo, containers []v1.Container, tot
 	for _, container := range containers {
 		// normalizedImageName -> xx/xx/xx:{version}
 		state, ok := nodeInfo.ImageStates[normalizedImageName(container.Image)]
-		klog.Infof("state: %v, ok: %v, image: %v", state, ok, normalizedImageName(container.Image))
 		if ok {
 			sum += scaledImageScore(state, totalNumNodes)
 		}
+		klog.Infof("state: %+v, image: %v, ok: %v", *state, normalizedImageName(container.Image), ok)
 	}
 	return sum
 }

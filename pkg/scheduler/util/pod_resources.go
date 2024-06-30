@@ -30,8 +30,10 @@ import (
 // As described in #11713, we use request instead of limit to deal with resource requirements.
 const (
 	// DefaultMilliCPURequest defines default milli cpu request number.
+	// DefaultMilliCPURequest 定义默认的毫核请求数。
 	DefaultMilliCPURequest int64 = 100 // 0.1 core
 	// DefaultMemoryRequest defines default memory request size.
+	// DefaultMemoryRequest 定义默认的内存请求大小。
 	DefaultMemoryRequest int64 = 200 * 1024 * 1024 // 200 MB
 )
 
@@ -52,6 +54,7 @@ func GetRequestForResource(resource v1.ResourceName, requests *v1.ResourceList, 
 	switch resource {
 	case v1.ResourceCPU:
 		// Override if un-set, but not if explicitly set to zero
+		// 如果未设置，则覆盖，但如果明确设置为零，则不覆盖
 		if _, found := (*requests)[v1.ResourceCPU]; !found && nonZero {
 			return DefaultMilliCPURequest
 		}

@@ -2271,6 +2271,7 @@ const (
 	// PreemptLowerPriority means that pod can preempt other pods with lower priority.
 	PreemptLowerPriority PreemptionPolicy = "PreemptLowerPriority"
 	// PreemptNever means that pod never preempts other pods with lower priority.
+	//PreemptNever意味着pod从不抢占优先级较低的其他pod。
 	PreemptNever PreemptionPolicy = "Never"
 )
 
@@ -4033,6 +4034,12 @@ type PodStatus struct {
 	// As a result, this field may be different than PodSpec.nodeName when the pod is
 	// scheduled.
 	// +optional
+	//仅当该pod抢占节点上的其他pod时，才设置nominatedNodeName，
+	//但它不能立即安排，因为优先购买权受害者会得到他们优雅的终止期。
+	//此字段不能保证pod将被安排在此节点上。
+	//如果其他节点尽快可用，调度器可能会决定将pod放置在其他位置。
+	//调度器还可以决定将该节点上的资源给予在抢占之后创建的优先级更高的pod。
+	//因此，当调度pod时，此字段可能与PodSpec.nodeName不同。
 	NominatedNodeName string `json:"nominatedNodeName,omitempty" protobuf:"bytes,11,opt,name=nominatedNodeName"`
 
 	// IP address of the host to which the pod is assigned. Empty if not yet scheduled.

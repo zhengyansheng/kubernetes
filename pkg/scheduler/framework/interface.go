@@ -93,6 +93,7 @@ const (
 	// The accompanying status message should explain why the pod is unschedulable.
 	UnschedulableAndUnresolvable
 	// Wait is used when a Permit plugin finds a pod scheduling should wait.
+	// Wait 当Permit插件发现pod调度应该等待时，使用等待
 	Wait
 	// Skip is used in the following scenarios:
 	// - when a Bind plugin chooses to skip binding.
@@ -429,6 +430,7 @@ type ScoreExtensions interface {
 	// NormalizeScore is called for all node scores produced by the same plugin's "Score"
 	// method. A successful run of NormalizeScore will update the scores list and return
 	// a success status.
+	// NormalizeScore用于由同一插件的“Score”方法生成的所有节点分数。NormalizeScore的成功运行将更新分数列表并返回成功状态。
 	NormalizeScore(ctx context.Context, state *CycleState, p *v1.Pod, scores NodeScoreList) *Status
 }
 
@@ -534,6 +536,10 @@ type Framework interface {
 	// PostFilter plugins can either be informational, in which case should be configured
 	// to execute first and return Unschedulable status, or ones that try to change the
 	// cluster state to make the pod potentially schedulable in a future scheduling cycle.
+	//RunPostFilterPlugins运行一组已配置的PostFilter插件。
+	//PostFilter插件可以是信息性的，在这种情况下应该进行配置
+	//首先执行并返回Unschedulable状态，或尝试更改的状态
+	//集群状态，以使pod在未来的调度周期中具有潜在的可调度性。
 	RunPostFilterPlugins(ctx context.Context, state *CycleState, pod *v1.Pod, filteredNodeStatusMap NodeToStatusMap) (*PostFilterResult, *Status)
 
 	// RunPreBindPlugins runs the set of configured PreBind plugins. It returns

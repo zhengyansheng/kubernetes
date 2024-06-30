@@ -524,6 +524,7 @@ func (b *volumeBinder) BindPodVolumes(ctx context.Context, assumedPod *v1.Pod, p
 	}
 
 	err = wait.Poll(time.Second, b.bindTimeout, func() (bool, error) {
+		// 检查所有PVC是否已经绑定，如果有一个没有绑定，则返回false 说明还没有绑定完成 会继续等待 直到超时 或者所有PVC都绑定完成
 		b, err := b.checkBindings(assumedPod, bindings, claimsToProvision)
 		return b, err
 	})

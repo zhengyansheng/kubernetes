@@ -608,6 +608,7 @@ func (f *frameworkImpl) QueueSortFunc() framework.LessFunc {
 	}
 
 	// Only one QueueSort plugin can be enabled.
+	klog.InfoS("run queue sort plugin", "plugin name", f.queueSortPlugins[0].Name())
 	return f.queueSortPlugins[0].Less
 }
 
@@ -625,9 +626,8 @@ func (f *frameworkImpl) RunPreFilterPlugins(ctx context.Context, state *framewor
 	var result *framework.PreFilterResult
 	var pluginsWithNodes []string
 	skipPlugins := sets.New[string]()
-	klog.Info("------------------------->Running pre-filter plugins: %+v", f.preFilterPlugins)
 	for _, pl := range f.preFilterPlugins {
-		klog.V(3).Infof("---------------->pre filter plugin name: %v\n", pl.Name())
+		klog.InfoS("run pre filter plugin", "plugin name", pl.Name())
 		r, s := f.runPreFilterPlugin(ctx, pl, state, pod)
 		// 跳过插件
 		if s.IsSkip() {
@@ -754,6 +754,7 @@ func (f *frameworkImpl) RunFilterPlugins(
 	// 同步执行所有的 filter plugin
 	var optPlugins []string
 	for _, pl := range f.filterPlugins {
+		klog.InfoS("run filter plugin", "plugin name", pl.Name())
 		optPlugins = append(optPlugins, pl.Name())
 		if state.SkipFilterPlugins.Has(pl.Name()) {
 			continue
@@ -769,10 +770,6 @@ func (f *frameworkImpl) RunFilterPlugins(
 			status.SetFailedPlugin(pl.Name())
 			return status
 		}
-	}
-
-	for i, p := range optPlugins {
-		klog.Infof("run filter plugin %d name: %v", i, p)
 	}
 
 	return nil
@@ -801,6 +798,7 @@ func (f *frameworkImpl) RunPostFilterPlugins(ctx context.Context, state *framewo
 	var reasons []string
 	var failedPlugin string
 	for _, pl := range f.postFilterPlugins {
+		klog.InfoS("run post filter plugin", "plugin name", pl.Name())
 		r, s := f.runPostFilterPlugin(ctx, pl, state, pod, filteredNodeStatusMap)
 		if s.IsSuccess() {
 			return r, s
@@ -929,6 +927,7 @@ func (f *frameworkImpl) RunPreScorePlugins(
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(preScore, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
 	for _, pl := range f.preScorePlugins {
+		klog.InfoS("run pre score plugin", "plugin name", pl.Name())
 		status = f.runPreScorePlugin(ctx, pl, state, pod, nodes)
 		if !status.IsSuccess() {
 			return framework.AsStatus(fmt.Errorf("running PreScore plugin %q: %w", pl.Name(), status.AsError()))
@@ -977,12 +976,13 @@ func (f *frameworkImpl) RunScorePlugins(ctx context.Context, state *framework.Cy
 		for _, pl := range f.scorePlugins {
 			nodeName := nodes[index].Name
 			s, status := f.runScorePlugin(ctx, pl, state, pod, nodeName)
+			klog.InfoS("run score plugin", "plugin name", pl.Name(), "nodeName", nodeName, "score", s)
 			if !status.IsSuccess() {
 				err := fmt.Errorf("plugin %q failed with: %w", pl.Name(), status.AsError())
 				errCh.SendErrorWithCancel(err, cancel)
 				return
 			}
-			klog.Infof("nodeName: %v, plugin %v score: %v", nodeName, pl.Name(), s)
+			//klog.Infof("nodeName: %v, plugin %v score: %v", nodeName, pl.Name(), s)
 			pluginToNodeScores[pl.Name()][index] = framework.NodeScore{
 				Name:  nodeName,
 				Score: s,
@@ -1078,6 +1078,7 @@ func (f *frameworkImpl) RunPreBindPlugins(ctx context.Context, state *framework.
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(preBind, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
 	for _, pl := range f.preBindPlugins {
+		klog.InfoS("run pre bind plugin", "plugin name", pl.Name())
 		status = f.runPreBindPlugin(ctx, pl, state, pod, nodeName)
 		if !status.IsSuccess() {
 			if status.IsUnschedulable() {
@@ -1118,7 +1119,7 @@ func (f *frameworkImpl) RunBindPlugins(ctx context.Context, state *framework.Cyc
 
 	// 遍历所有的绑定插件
 	for _, pl := range f.bindPlugins {
-
+		klog.InfoS("run bind plugin", "plugin name", pl.Name())
 		// 执行绑定插件
 		status = f.runBindPlugin(ctx, pl, state, pod, nodeName)
 		if status.IsSkip() {
@@ -1158,6 +1159,7 @@ func (f *frameworkImpl) RunPostBindPlugins(ctx context.Context, state *framework
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(postBind, framework.Success.String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
 	for _, pl := range f.postBindPlugins {
+		klog.InfoS("run post bind plugin", "plugin name", pl.Name())
 		f.runPostBindPlugin(ctx, pl, state, pod, nodeName)
 	}
 }
@@ -1183,6 +1185,7 @@ func (f *frameworkImpl) RunReservePluginsReserve(ctx context.Context, state *fra
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(reserve, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
 	}()
 	for _, pl := range f.reservePlugins {
+		klog.InfoS("run reserve plugin", "plugin name", pl.Name())
 		status = f.runReservePluginReserve(ctx, pl, state, pod, nodeName)
 		if !status.IsSuccess() {
 			err := status.AsError()
@@ -1234,6 +1237,7 @@ func (f *frameworkImpl) runReservePluginUnreserve(ctx context.Context, pl framew
 // to a map of currently waiting pods and return status with "Wait" code.
 // Pod will remain waiting pod for the minimum duration returned by the permit plugins.
 func (f *frameworkImpl) RunPermitPlugins(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodeName string) (status *framework.Status) {
+
 	startTime := time.Now()
 	defer func() {
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(permit, status.Code().String(), f.profileName).Observe(metrics.SinceInSeconds(startTime))
@@ -1241,6 +1245,7 @@ func (f *frameworkImpl) RunPermitPlugins(ctx context.Context, state *framework.C
 	pluginsWaitTime := make(map[string]time.Duration)
 	statusCode := framework.Success
 	for _, pl := range f.permitPlugins {
+		klog.InfoS("run permit plugin", "plugin name", pl.Name())
 		status, timeout := f.runPermitPlugin(ctx, pl, state, pod, nodeName)
 		if !status.IsSuccess() {
 			if status.IsUnschedulable() {
@@ -1250,6 +1255,7 @@ func (f *frameworkImpl) RunPermitPlugins(ctx context.Context, state *framework.C
 			}
 			if status.IsWait() {
 				// Not allowed to be greater than maxTimeout.
+				// 不允许大于 maxTimeout 15分钟。
 				if timeout > maxTimeout {
 					timeout = maxTimeout
 				}
@@ -1283,7 +1289,9 @@ func (f *frameworkImpl) runPermitPlugin(ctx context.Context, pl framework.Permit
 }
 
 // WaitOnPermit will block, if the pod is a waiting pod, until the waiting pod is rejected or allowed.
+// WaitOnPermit 将要阻塞，如果 pod 是一个等待的 pod，直到等待的 pod 被拒绝或允许。
 func (f *frameworkImpl) WaitOnPermit(ctx context.Context, pod *v1.Pod) *framework.Status {
+	// 获取等待的 pod
 	waitingPod := f.waitingPods.get(pod.UID)
 	if waitingPod == nil {
 		return nil
@@ -1292,6 +1300,7 @@ func (f *frameworkImpl) WaitOnPermit(ctx context.Context, pod *v1.Pod) *framewor
 	klog.V(4).InfoS("Pod waiting on permit", "pod", klog.KObj(pod))
 
 	startTime := time.Now()
+	// 等待等待的 pod 的状态
 	s := <-waitingPod.s
 	metrics.PermitWaitDuration.WithLabelValues(s.Code().String()).Observe(metrics.SinceInSeconds(startTime))
 
